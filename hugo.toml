@@ -1,0 +1,11 @@
+baseURL = 'https://example.org/'
+languageCode = 'en-us'
+title = 'My New Hugo Project'
+theme = "PaperMod"
+[params]
+    author = "wang_11"
+[author]
+    name = "wang_11"
+[caches]
+  [caches.images]
+    dir = ':cacheDir/images'
