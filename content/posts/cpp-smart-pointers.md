@@ -25,6 +25,7 @@ categories = ["C++底层修炼"]
 std::unique_ptr<int> p1 = std::make_unique<int>(100);
 // std::unique_ptr<int> p2 = p1; // ❌ 编译报错！禁止拷贝！
 std::unique_ptr<int> p3 = std::move(p1); // ✅ 成功！p1 变为空，p3 接管内存
+---
 
 ---
 ## 2. 共享所有权的交际花：'std::shared_ptr'
