@@ -13,6 +13,7 @@ categories = ["C++底层修炼"]
 标准库 `<memory>` 提供了三大核心智能指针，它们各自解决不同的场景痛点。
 
 ---
+
 ## 1. 独占所有权的霸道总裁：`std::unique_ptr`
 
 `unique_ptr` 核心语义是**“独占”**。同一个时刻，只能有一个 `unique_ptr` 指向该片内存。
@@ -25,6 +26,7 @@ categories = ["C++底层修炼"]
 std::unique_ptr<int> p1 = std::make_unique<int>(100);
 // std::unique_ptr<int> p2 = p1; // ❌ 编译报错！禁止拷贝！
 std::unique_ptr<int> p3 = std::move(p1); // ✅ 成功！p1 变为空，p3 接管内存
+
 ---
 
 ### 2. 共享所有权的交际花：'std::shared_ptr'
