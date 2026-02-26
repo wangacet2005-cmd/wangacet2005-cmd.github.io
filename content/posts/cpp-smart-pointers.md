@@ -56,8 +56,8 @@ shared_ptr 看起来很完美，但它有一个致命弱点：循环引用（Cir
 客户端/底层开发面试中，经常要求白板手写一个简化版的 shared_ptr，考察对拷贝构造、赋值运算符重载以及堆内存管理的理解。
 以下是我今天手写并测试通过的核心源码：
 
-< > C++
-`#include "iostream"
+```cpp
+#include "iostream"
 
 template<typename T>
 class demo_shared_ptr {
@@ -130,7 +130,7 @@ int main() {
 
     return 0;
 
-}`
+}
 
 💡 核心总结
 手写 shared_ptr 最容易踩坑的地方在赋值运算符重载（operator=）。必须严格遵循三步走：
