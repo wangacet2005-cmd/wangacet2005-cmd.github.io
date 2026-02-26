@@ -85,7 +85,8 @@ public:
     }
 
     demo_shared_ptr operator=(const demo_shared_ptr& other) {
-        if(this != &other) release();
+        if(this == &other) return *this;
+        release();
         ptr = other.ptr;
         ref_count = other.ref_count;
         if(ptr) (*ref_count) ++;
