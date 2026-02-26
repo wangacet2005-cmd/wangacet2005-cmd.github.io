@@ -27,7 +27,6 @@ std::unique_ptr<int> p1 = std::make_unique<int>(100);
 std::unique_ptr<int> p3 = std::move(p1); // ✅ 成功！p1 变为空，p3 接管内存
 ---
 
----
 ## 2. 共享所有权的交际花：'std::shared_ptr'
 
 在客户端开发中（比如多个 UI 组件同时引用同一份数据模型），经常需要共享内存。这时就要用到 shared_ptr。
