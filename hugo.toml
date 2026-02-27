@@ -1,6 +1,6 @@
 baseURL = 'https://example.org/'
 languageCode = 'en-us'
-title = 'My New Hugo Project'
+title = 'My study blog'
 theme = "PaperMod"
 [params]
     author = "wangacet2005-cmd"
