@@ -2,12 +2,46 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
+    <loc>http://localhost:1313/posts/cpp-smart-pointers/</loc>
+    <lastmod>2026-02-26T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/posts/stl-library/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/c&#43;&#43;/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/categories/c&#43;&#43;%E5%BA%95%E5%B1%82%E4%BF%AE%E7%82%BC/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
+  </url><url>
     <loc>http://localhost:1313/categories/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/posts/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/stl/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
   </url><url>
     <loc>http://localhost:1313/tags/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/%E5%AE%B9%E5%99%A8/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/%E9%9D%A2%E8%AF%95%E7%AA%81%E5%87%BB/</loc>
+    <lastmod>2026-02-27T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88/</loc>
+    <lastmod>2026-02-26T15:00:00+08:00</lastmod>
+  </url><url>
+    <loc>http://localhost:1313/tags/%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/</loc>
+    <lastmod>2026-02-26T15:00:00+08:00</lastmod>
   </url>
 </urlset>

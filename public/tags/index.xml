@@ -6,6 +6,56 @@
     <description>Recent content in Tags on My New Hugo Project</description>
     <generator>Hugo -- 0.156.0</generator>
     <language>en-us</language>
+    <lastBuildDate>Fri, 27 Feb 2026 15:00:00 +0800</lastBuildDate>
     <atom:link href="http://localhost:1313/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>C&#43;&#43;</title>
+      <link>http://localhost:1313/tags/c&#43;&#43;/</link>
+      <pubDate>Fri, 27 Feb 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/tags/c&#43;&#43;/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>STL</title>
+      <link>http://localhost:1313/tags/stl/</link>
+      <pubDate>Fri, 27 Feb 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/tags/stl/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>容器</title>
+      <link>http://localhost:1313/tags/%E5%AE%B9%E5%99%A8/</link>
+      <pubDate>Fri, 27 Feb 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/tags/%E5%AE%B9%E5%99%A8/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>底层原理</title>
+      <link>http://localhost:1313/tags/%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/</link>
+      <pubDate>Fri, 27 Feb 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/tags/%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>面试突击</title>
+      <link>http://localhost:1313/tags/%E9%9D%A2%E8%AF%95%E7%AA%81%E5%87%BB/</link>
+      <pubDate>Fri, 27 Feb 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/tags/%E9%9D%A2%E8%AF%95%E7%AA%81%E5%87%BB/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>智能指针</title>
+      <link>http://localhost:1313/tags/%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88/</link>
+      <pubDate>Thu, 26 Feb 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/tags/%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>源码剖析</title>
+      <link>http://localhost:1313/tags/%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/</link>
+      <pubDate>Thu, 26 Feb 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/tags/%E6%BA%90%E7%A0%81%E5%89%96%E6%9E%90/</guid>
+      <description></description>
+    </item>
   </channel>
 </rss>

@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <html lang="en" dir="auto" data-theme="auto">
 
-<head>
-	<meta name="generator" content="Hugo 0.156.0"><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="robots" content="noindex, nofollow">
-<title>My New Hugo Project</title>
-
+<title>智能指针 | My New Hugo Project</title>
+<meta name="keywords" content="">
 <meta name="description" content="">
 <meta name="author" content="wangacet2005-cmd">
-<link rel="canonical" href="http://localhost:1313/">
+<link rel="canonical" href="http://localhost:1313/tags/%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.a29c24210eb31d9ce56f669c66a35c9c51b17376b7764e336a49af7dec914cf0.css" integrity="sha256-opwkIQ6zHZzlb2acZqNcnFGxc3a3dk4zakmvfeyRTPA=" rel="preload stylesheet" as="style">
 <link rel="icon" href="http://localhost:1313/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
@@ -19,8 +18,8 @@
 <link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" type="application/rss+xml" href="http://localhost:1313/index.xml" title="rss">
-<link rel="alternate" hreflang="en" href="http://localhost:1313/">
+<link rel="alternate" type="application/rss+xml" href="http://localhost:1313/tags/%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88/index.xml" title="rss">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/tags/%E6%99%BA%E8%83%BD%E6%8C%87%E9%92%88/">
 <noscript>
     <style>
         #theme-toggle,
@@ -107,14 +106,19 @@
     </nav>
 </header>
 <main class="main"> 
+<header class="page-header">
+  <h1>
+    智能指针
+  </h1>
+</header>
 
-<article class="post-entry"> 
+<article class="post-entry tag-entry"> 
   <header class="entry-header">
     <h2 class="entry-hint-parent">Day 1：C&#43;&#43; 面试必杀——彻底吃透智能指针与手写 shared_ptr
     </h2>
   </header>
   <div class="entry-content">
-    <p> 写在前面：这是我为期 30 天“PC 客户端开发工程师”冲刺计划的第一天。想要拿下硬核的 C&#43;&#43; 岗位，第一步就是告别 C 语言时代的裸指针（Raw Pointer）。今天彻底打通现代 C&#43;&#43; 的核心护城河：内存管理与智能指针。
+    <p> 写在前面：这是我为期 30 天“PC 客户端开发工程师”冲刺计划的第二天。想要拿下硬核的 C&#43;&#43; 岗位，第一步就是告别 C 语言时代的裸指针（Raw Pointer）。今天彻底打通现代 C&#43;&#43; 的核心护城河：内存管理与智能指针。
 在现代 C&#43;&#43;（C&#43;&#43;11 及以后）中，手动 new 和 delete 已经被视为一种“坏味道”（Bad Smell）。核心思想是 RAII（Resource Acquisition Is Initialization，资源获取即初始化）：将内存的生命周期绑定到栈对象的生命周期上，利用作用域结束时自动调用析构函数的特性来释放内存。
 标准库 &lt;memory&gt; 提供了三大核心智能指针，它们各自解决不同的场景痛点。
 1. 独占所有权的霸道总裁：std::unique_ptr unique_ptr 核心语义是**“独占”**。同一个时刻，只能有一个 unique_ptr 指向该片内存。
@@ -124,24 +128,6 @@
   </div>
   <footer class="entry-footer"><span title='2026-02-26 15:00:00 +0800 CST'>February 26, 2026</span>&nbsp;·&nbsp;<span>wangacet2005-cmd</span></footer>
   <a class="entry-link" aria-label="post link to Day 1：C&#43;&#43; 面试必杀——彻底吃透智能指针与手写 shared_ptr" href="http://localhost:1313/posts/cpp-smart-pointers/"></a>
-</article>
-
-<article class="post-entry"> 
-  <header class="entry-header">
-    <h2 class="entry-hint-parent">Day 2：C&#43;&#43; 面试必考——STL 容器底层原理与选型全攻略
-    </h2>
-  </header>
-  <div class="entry-content">
-    <p> 写在前面：这是我为期 30 天&#34;PC 客户端开发工程师&#34;冲刺计划的第二天。在打通了智能指针与 RAII 之后，今天进入 STL 的核心战场：容器（Container）。容器是 C&#43;&#43; 日常开发中使用频率最高的工具，也是面试中&#34;底层原理&#34;考察的重灾区。今天的目标是：不仅会用，更要知道为什么这么用。
-STL 容器分为三大类：序列容器（vector、list、deque）、关联容器（map、set）和无序容器（unordered_map、unordered_set）。它们的核心差异在于底层数据结构，而底层数据结构直接决定了各种操作的时间复杂度和使用场景。
-1. vector：最常用的动态数组 底层原理 vector 底层是一块连续的堆内存，本质是一个会自动扩容的数组。连续内存使它对 CPU 缓存极为友好，随机访问性能达到 O(1)。
-核心：扩容机制（面试高频！） 这是关于 vector 最重要的知识点。当元素数量（size）触达当前容量（capacity）上限时，vector 会触发扩容：
-申请约 2 倍大小的新内存（不同标准库实现略有差异） 将旧数据全部拷贝（或移动）到新内存 释放旧内存 这意味着扩容是一个 O(n) 操作，且会导致所有已有的迭代器、指针、引用全部失效。
-#include &lt;vector&gt; #include &lt;iostream&gt; using namespace std; int main() { vector&lt;int&gt; v = {1, 2, 3}; // 如果提前知道数量，用 reserve 预分配，避免多次扩容 v.reserve(100); v.push_back(4); // O(1) 均摊——末尾追加 v.insert(v.begin(), 0); // O(n) ——头部插入，需要移动所有元素，慢！ v.erase(v.begin()); // O(n) ——头部删除，同理 cout &lt;&lt; &#34;size: &#34; &lt;&lt; v.size() &lt;&lt; endl; // 当前元素数量 cout &lt;&lt; &#34;capacity: &#34; &lt;&lt; v.capacity() &lt;&lt; endl; // 当前已分配的容量 } 适用场景 需要随机访问、末尾频繁增删的场景。在没有特殊需求时，vector 永远是序列容器的首选。
-...</p>
-  </div>
-  <footer class="entry-footer"><span title='2026-02-27 15:00:00 +0800 CST'>February 27, 2026</span>&nbsp;·&nbsp;<span>wangacet2005-cmd</span></footer>
-  <a class="entry-link" aria-label="post link to Day 2：C&#43;&#43; 面试必考——STL 容器底层原理与选型全攻略" href="http://localhost:1313/posts/stl-library/"></a>
 </article>
     </main>
     

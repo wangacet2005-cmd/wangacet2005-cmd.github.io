@@ -3,9 +3,11 @@ languageCode = 'en-us'
 title = 'My New Hugo Project'
 theme = "PaperMod"
 [params]
-    author = "wang_11"
+    author = "wangacet2005-cmd"
+    disableSpecial1stPost = true
+    homeInfoParams = false
 [author]
-    name = "wang_11"
+    name = "wangacet2005-cmd"
 [caches]
   [caches.images]
     dir = ':cacheDir/images'
