@@ -2,6 +2,7 @@
 title = "Day 3：C++ 面试必考——STL 算法与迭代器全面解析"
 date = 2026-02-28T15:00:00+08:00
 draft = false
+weight = 3
 tags = ["C++", "STL", "算法", "迭代器", "面试突击"]
 categories = ["C++底层修炼"]
 +++
