@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Day 4：操作系统核心——内存管理、多线程与文件系统实战 | My Study Blog</title>
+<meta name="keywords" content="C&#43;&#43;, 操作系统, 内存管理, 多线程, 文件系统, ASan, 面试突击">
+<meta name="description" content="
+写在前面：这是我为期 30 天&quot;PC 客户端开发工程师&quot;冲刺计划的第四天。今天从 STL 进入操作系统底层，理解进程内存布局、多线程同步、文件系统 inode，并在 WSL 环境下完成了 ASan 内存检测工具的配置和实战。这些知识直接对应岗位要求中的&quot;内存管理、进程线程调度&quot;加分项。
+
+
+1. 虚拟内存与进程内存布局
+虚拟地址 vs 物理地址
+C&#43;&#43; 程序里每一个指针存的都是虚拟地址，不是真实的物理内存地址。操作系统为每个进程维护一张独立的页表（Page Table），负责把虚拟地址翻译成物理地址。
+进程A的虚拟地址 0x7fff1234
+        ↓ 页表翻译
+物理内存地址 0x3a2b5678
+这样设计的核心好处是进程隔离：每个进程以为自己独占了整块内存，互相之间不会踩到对方的数据。
+内存以页（Page）为单位管理，通常一页是 4KB。如果程序访问了一个虚拟地址，对应的物理页还没加载进内存，CPU 会触发缺页中断（Page Fault），操作系统负责把数据从磁盘调入内存，再继续执行。这也是程序启动时&quot;预热&quot;阶段变慢的原因。
+进程内存分段
+高地址  ┌──────────────┐
+        │   栈 Stack   │  ← 函数调用帧、局部变量，向下增长
+        ├──────────────┤
+        │      ↓       │
+        │    （空闲）   │
+        │      ↑       │
+        ├──────────────┤
+        │   堆 Heap    │  ← malloc/new 分配，向上增长
+        ├──────────────┤
+        │   BSS 段     │  ← 未初始化的全局/静态变量
+        ├──────────────┤
+        │   数据段      │  ← 已初始化的全局/静态变量
+        ├──────────────┤
+低地址  │   代码段      │  ← 可执行指令（只读）
+        └──────────────┘
+面试高频考点：">
+<meta name="author" content="wangacet2005-cmd">
+<link rel="canonical" href="http://localhost:1313/posts/os-memory-thread-filesystem/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.a29c24210eb31d9ce56f669c66a35c9c51b17376b7764e336a49af7dec914cf0.css" integrity="sha256-opwkIQ6zHZzlb2acZqNcnFGxc3a3dk4zakmvfeyRTPA=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/os-memory-thread-filesystem/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="My Study Blog (Alt + H)">My Study Blog</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    
+    <h1 class="post-title entry-hint-parent">
+      Day 4：操作系统核心——内存管理、多线程与文件系统实战
+    </h1>
+    <div class="post-meta"><span title='2026-02-28 20:00:00 +0800 CST'>February 28, 2026</span>&nbsp;·&nbsp;<span>wangacet2005-cmd</span>
+
+</div>
+  </header> 
+  <div class="post-content"><blockquote>
+<p><strong>写在前面</strong>：这是我为期 30 天&quot;PC 客户端开发工程师&quot;冲刺计划的第四天。今天从 STL 进入操作系统底层，理解进程内存布局、多线程同步、文件系统 inode，并在 WSL 环境下完成了 ASan 内存检测工具的配置和实战。这些知识直接对应岗位要求中的&quot;内存管理、进程线程调度&quot;加分项。</p>
+</blockquote>
+<hr>
+<h2 id="1-虚拟内存与进程内存布局">1. 虚拟内存与进程内存布局<a hidden class="anchor" aria-hidden="true" href="#1-虚拟内存与进程内存布局">#</a></h2>
+<h3 id="虚拟地址-vs-物理地址">虚拟地址 vs 物理地址<a hidden class="anchor" aria-hidden="true" href="#虚拟地址-vs-物理地址">#</a></h3>
+<p>C++ 程序里每一个指针存的都是<strong>虚拟地址</strong>，不是真实的物理内存地址。操作系统为每个进程维护一张独立的<strong>页表（Page Table）</strong>，负责把虚拟地址翻译成物理地址。</p>
+<pre tabindex="0"><code>进程A的虚拟地址 0x7fff1234
+        ↓ 页表翻译
+物理内存地址 0x3a2b5678
+</code></pre><p>这样设计的核心好处是<strong>进程隔离</strong>：每个进程以为自己独占了整块内存，互相之间不会踩到对方的数据。</p>
+<p>内存以<strong>页（Page）<strong>为单位管理，通常一页是 4KB。如果程序访问了一个虚拟地址，对应的物理页还没加载进内存，CPU 会触发</strong>缺页中断（Page Fault）</strong>，操作系统负责把数据从磁盘调入内存，再继续执行。这也是程序启动时&quot;预热&quot;阶段变慢的原因。</p>
+<h3 id="进程内存分段">进程内存分段<a hidden class="anchor" aria-hidden="true" href="#进程内存分段">#</a></h3>
+<pre tabindex="0"><code>高地址  ┌──────────────┐
+        │   栈 Stack   │  ← 函数调用帧、局部变量，向下增长
+        ├──────────────┤
+        │      ↓       │
+        │    （空闲）   │
+        │      ↑       │
+        ├──────────────┤
+        │   堆 Heap    │  ← malloc/new 分配，向上增长
+        ├──────────────┤
+        │   BSS 段     │  ← 未初始化的全局/静态变量
+        ├──────────────┤
+        │   数据段      │  ← 已初始化的全局/静态变量
+        ├──────────────┤
+低地址  │   代码段      │  ← 可执行指令（只读）
+        └──────────────┘
+</code></pre><p>面试高频考点：</p>
+<ul>
+<li><code>int a = 5;</code> 全局变量 → 数据段</li>
+<li><code>int b;</code> 全局变量 → BSS 段</li>
+<li>函数内局部变量 → 栈</li>
+<li><code>new</code> / <code>malloc</code> 分配的对象 → 堆</li>
+</ul>
+<h3 id="malloc-底层原理">malloc 底层原理<a hidden class="anchor" aria-hidden="true" href="#malloc-底层原理">#</a></h3>
+<p><code>malloc</code> 并不是每次都向操作系统申请内存，而是：</p>
+<ol>
+<li>首次调用时通过 <code>brk()</code> 或 <code>mmap()</code> 系统调用批量申请一大块内存</li>
+<li>自己维护<strong>空闲链表</strong>，负责切割和管理</li>
+<li><code>free()</code> 后归还到空闲链表，不立刻还给 OS</li>
+</ol>
+<p>这就是频繁小块 <code>malloc</code>/<code>free</code> 会产生<strong>内存碎片</strong>的原因——空闲内存零散分布，拼不出一块连续的大内存。长期运行的客户端如果不注意，内存会持续上涨直到崩溃。</p>
+<hr>
+<h2 id="2-内存问题三大类型与-asan-实战">2. 内存问题三大类型与 ASan 实战<a hidden class="anchor" aria-hidden="true" href="#2-内存问题三大类型与-asan-实战">#</a></h2>
+<h3 id="今天配置环境的插曲">今天配置环境的插曲<a hidden class="anchor" aria-hidden="true" href="#今天配置环境的插曲">#</a></h3>
+<p>Windows + MinGW 的 ASan 支持残缺，花了不少时间排查，最终通过安装 <strong>WSL（Windows Subsystem for Linux）</strong> 解决。WSL 里的 g++ 对 ASan 完美支持，而且以后学网络编程和跨平台开发都会用到，一劳永逸。</p>
+<h3 id="三类内存错误">三类内存错误<a hidden class="anchor" aria-hidden="true" href="#三类内存错误">#</a></h3>
+<p><strong>类型一：内存泄漏（Memory Leak）</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">leak_memory</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span><span style="color:#f92672">*</span> arr <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#66d9ef">int</span>[<span style="color:#ae81ff">100</span>];
+</span></span><span style="display:flex;"><span>    arr[<span style="color:#ae81ff">0</span>] <span style="color:#f92672">=</span> <span style="color:#ae81ff">42</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 忘记 delete[] arr，函数结束后内存永远无法回收
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>类型二：堆缓冲区越界（Heap Buffer Overflow）</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">out_of_bounds</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span><span style="color:#f92672">*</span> arr <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#66d9ef">int</span>[<span style="color:#ae81ff">5</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">5</span>; i<span style="color:#f92672">++</span>) {  <span style="color:#75715e">// i=5 时越界写入
+</span></span></span><span style="display:flex;"><span>        arr[i] <span style="color:#f92672">=</span> i;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">delete</span>[] arr;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>类型三：Use-After-Free</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">char</span><span style="color:#f92672">*</span> <span style="color:#a6e22e">use_after_free</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span><span style="color:#f92672">*</span> msg <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#66d9ef">char</span>[<span style="color:#ae81ff">20</span>];
+</span></span><span style="display:flex;"><span>    strcpy(msg, <span style="color:#e6db74">&#34;hello&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">delete</span>[] msg;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> msg;  <span style="color:#75715e">// 返回已释放的内存，调用方访问时是未定义行为
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="asan-编译与报告解读">ASan 编译与报告解读<a hidden class="anchor" aria-hidden="true" href="#asan-编译与报告解读">#</a></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>g++ -fsanitize<span style="color:#f92672">=</span>address -fno-omit-frame-pointer -g -o test test.cpp
+</span></span><span style="display:flex;"><span>./test
+</span></span></code></pre></div><p>今天实际拿到的报告：</p>
+<pre tabindex="0"><code>==21320==ERROR: AddressSanitizer: heap-buffer-overflow
+WRITE of size 4 at 0x503000000054 thread T0
+    #0 in out_of_bounds() test.cpp:13   ← 越界发生在第13行
+    #1 in main            test.cpp:27
+...
+0 bytes after 20-byte region [0x503000000040, 0x503000000054)
+</code></pre><p>报告的关键信息：</p>
+<table>
+  <thead>
+      <tr>
+          <th>字段</th>
+          <th>含义</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>heap-buffer-overflow</code></td>
+          <td>错误类型：堆缓冲区溢出</td>
+      </tr>
+      <tr>
+          <td><code>WRITE of size 4</code></td>
+          <td>越界写入了 4 字节（一个 int）</td>
+      </tr>
+      <tr>
+          <td><code>test.cpp:13</code></td>
+          <td>出错的源码行</td>
+      </tr>
+      <tr>
+          <td><code>0 bytes after 20-byte region</code></td>
+          <td>申请了 5×4=20 字节，写到了第 21 字节</td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p>⚠️ <strong>重要</strong>：ASan 检测到错误后立即 <code>ABORT</code>，后续代码不再执行。想看多个错误，要分开测试。</p>
+</blockquote>
+<h3 id="new-与-delete-必须配对">new[] 与 delete[] 必须配对<a hidden class="anchor" aria-hidden="true" href="#new-与-delete-必须配对">#</a></h3>
+<p>今天写代码时犯了一个低级错误：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// ❌ 错误：new[] 对应的是 delete[]，不是 delete
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">char</span><span style="color:#f92672">*</span> p <span style="color:#f92672">=</span> <span style="color:#66d9ef">new</span> <span style="color:#66d9ef">char</span>[<span style="color:#ae81ff">20</span>];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">delete</span> p;    <span style="color:#75715e">// 未定义行为，堆结构可能损坏
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// ✅ 正确
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">delete</span>[] p;
+</span></span></code></pre></div><p>口诀：<strong><code>new</code> 对应 <code>delete</code>，<code>new[]</code> 对应 <code>delete[]</code>，永远成对出现。</strong></p>
+<hr>
+<h2 id="3-多线程原子操作与生产者-消费者">3. 多线程：原子操作与生产者-消费者<a hidden class="anchor" aria-hidden="true" href="#3-多线程原子操作与生产者-消费者">#</a></h2>
+<h3 id="竞态条件的根源">竞态条件的根源<a hidden class="anchor" aria-hidden="true" href="#竞态条件的根源">#</a></h3>
+<p><code>counter++</code> 在 CPU 层面是三条指令：LOAD → ADD → STORE。多线程并发执行时，这三步可能被打断交错，导致数据丢失。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// 两个线程各自执行 100000 次，结果每次都不同，永远不是 200000
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> counter <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">increment</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">100000</span>; i<span style="color:#f92672">++</span>) counter<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="atomic不可分割的操作">atomic：不可分割的操作<a hidden class="anchor" aria-hidden="true" href="#atomic不可分割的操作">#</a></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;atomic&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>std<span style="color:#f92672">::</span>atomic<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;</span> counter <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 现在 counter++ 是原子的，结果永远是 200000
+</span></span></span></code></pre></div><p><code>atomic</code> 常用操作：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>std<span style="color:#f92672">::</span>atomic<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;</span> val <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>val<span style="color:#f92672">++</span>;                    <span style="color:#75715e">// 原子自增
+</span></span></span><span style="display:flex;"><span>val.store(<span style="color:#ae81ff">10</span>);            <span style="color:#75715e">// 原子写入
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> x <span style="color:#f92672">=</span> val.load();       <span style="color:#75715e">// 原子读取
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> old <span style="color:#f92672">=</span> val.exchange(<span style="color:#ae81ff">99</span>);  <span style="color:#75715e">// 原子交换，返回旧值
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// CAS：比较并交换，无锁编程的基础
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> expected <span style="color:#f92672">=</span> <span style="color:#ae81ff">10</span>;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">bool</span> ok <span style="color:#f92672">=</span> val.compare_exchange_strong(expected, <span style="color:#ae81ff">20</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// val == 10 时改为 20 返回 true，否则 expected 更新为实际值返回 false
+</span></span></span></code></pre></div><h3 id="mutex-vs-atomic-如何选择">mutex vs atomic 如何选择<a hidden class="anchor" aria-hidden="true" href="#mutex-vs-atomic-如何选择">#</a></h3>
+<table>
+  <thead>
+      <tr>
+          <th>场景</th>
+          <th>推荐</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>保护单个简单变量</td>
+          <td><code>atomic</code></td>
+      </tr>
+      <tr>
+          <td>需要保护多个变量的组合</td>
+          <td><code>mutex</code></td>
+      </tr>
+      <tr>
+          <td>需要条件等待</td>
+          <td><code>mutex</code> + <code>condition_variable</code></td>
+      </tr>
+      <tr>
+          <td>追求极致性能的热点路径</td>
+          <td><code>atomic</code></td>
+      </tr>
+  </tbody>
+</table>
+<blockquote>
+<p>⚠️ <strong>陷阱</strong>：即使 <code>x</code> 和 <code>y</code> 各自是 <code>atomic</code>，它们的组合操作也不是原子的。多个相关变量必须用 <code>mutex</code> 一起保护。</p>
+</blockquote>
+<h3 id="生产者-消费者模型">生产者-消费者模型<a hidden class="anchor" aria-hidden="true" href="#生产者-消费者模型">#</a></h3>
+<p>线程安全的任务队列核心实现：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">TaskQueue</span> {
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>queue<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;</span>         queue_;
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>mutex              mutex_;
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>condition_variable cv_;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">bool</span>                    shutdown_ <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>atomic<span style="color:#f92672">&lt;</span>size_t<span style="color:#f92672">&gt;</span>     completed_count_{<span style="color:#ae81ff">0</span>};  <span style="color:#75715e">// 无锁计数
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">public</span><span style="color:#f92672">:</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> push(<span style="color:#66d9ef">int</span> task) {
+</span></span><span style="display:flex;"><span>        std<span style="color:#f92672">::</span>unique_lock<span style="color:#f92672">&lt;</span>std<span style="color:#f92672">::</span>mutex<span style="color:#f92672">&gt;</span> lock(mutex_);
+</span></span><span style="display:flex;"><span>        queue_.push(task);
+</span></span><span style="display:flex;"><span>        cv_.notify_all();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>optional<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;</span> pop() {
+</span></span><span style="display:flex;"><span>        std<span style="color:#f92672">::</span>unique_lock<span style="color:#f92672">&lt;</span>std<span style="color:#f92672">::</span>mutex<span style="color:#f92672">&gt;</span> lock(mutex_);
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// lambda 防止虚假唤醒（Spurious Wakeup）
+</span></span></span><span style="display:flex;"><span>        cv_.wait(lock, [<span style="color:#66d9ef">this</span>] { <span style="color:#66d9ef">return</span> <span style="color:#f92672">!</span>queue_.empty() <span style="color:#f92672">||</span> shutdown_; });
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (queue_.empty()) <span style="color:#66d9ef">return</span> std<span style="color:#f92672">::</span>nullopt;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">int</span> task <span style="color:#f92672">=</span> queue_.front();
+</span></span><span style="display:flex;"><span>        queue_.pop();
+</span></span><span style="display:flex;"><span>        completed_count_<span style="color:#f92672">++</span>;  <span style="color:#75715e">// atomic，不需要额外加锁
+</span></span></span><span style="display:flex;"><span>        cv_.notify_all();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> task;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">shutdown</span>() {
+</span></span><span style="display:flex;"><span>        std<span style="color:#f92672">::</span>lock_guard<span style="color:#f92672">&lt;</span>std<span style="color:#f92672">::</span>mutex<span style="color:#f92672">&gt;</span> lock(mutex_);
+</span></span><span style="display:flex;"><span>        shutdown_ <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>        cv_.notify_all();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>消费者处理负数任务的正确写法：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">consumer</span>(<span style="color:#66d9ef">int</span> id, TaskQueue<span style="color:#f92672">&amp;</span> queue) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">auto</span> task <span style="color:#f92672">=</span> queue.pop();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>task.has_value()) <span style="color:#66d9ef">break</span>;  <span style="color:#75715e">// 唯一的退出点：队列关闭
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#f92672">*</span>task <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>            std<span style="color:#f92672">::</span>cerr <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;[消费者&#34;</span> <span style="color:#f92672">&lt;&lt;</span> id <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;] 跳过非法任务 &#34;</span> <span style="color:#f92672">&lt;&lt;</span> <span style="color:#f92672">*</span>task <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">continue</span>;  <span style="color:#75715e">// 跳过，但不退出
+</span></span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 正常处理...
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>关键原则</strong>：业务层面的&quot;跳过&quot;和线程生命周期的&quot;退出&quot;是两件事，不能混在一起。</p>
+<h3 id="condition_variable-三个坑">condition_variable 三个坑<a hidden class="anchor" aria-hidden="true" href="#condition_variable-三个坑">#</a></h3>
+<p><strong>坑一：虚假唤醒</strong>——永远用带 lambda 的 <code>wait()</code>，不要裸 <code>wait()</code>。</p>
+<p><strong>坑二：notify 时机</strong>——锁外 notify 性能略好，减少无效的上下文切换。</p>
+<p><strong>坑三：notify_one vs notify_all</strong>——只加入一个任务用 <code>notify_one</code>，状态发生全局变化（如 shutdown）用 <code>notify_all</code>，避免&quot;惊群效应&quot;。</p>
+<hr>
+<h2 id="4-文件系统inode-与硬链接">4. 文件系统：inode 与硬链接<a hidden class="anchor" aria-hidden="true" href="#4-文件系统inode-与硬链接">#</a></h2>
+<h3 id="inode-的本质">inode 的本质<a hidden class="anchor" aria-hidden="true" href="#inode-的本质">#</a></h3>
+<p>Linux 文件系统中，文件分两部分存储：</p>
+<ul>
+<li><strong>inode</strong>：存储元数据（权限、大小、数据块位置），<strong>不含文件名</strong></li>
+<li><strong>目录项（dentry）</strong>：存储文件名到 inode 编号的映射</li>
+</ul>
+<p>文件名只是指向 inode 的标签，这是硬链接的理论基础。</p>
+<h3 id="今天的-inode-实验">今天的 inode 实验<a hidden class="anchor" aria-hidden="true" href="#今天的-inode-实验">#</a></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># 创建文件并查看 inode</span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#34;hello, inode world&#34;</span> &gt; original.txt
+</span></span><span style="display:flex;"><span>ls -i original.txt   <span style="color:#75715e"># 查看 inode 编号</span>
+</span></span><span style="display:flex;"><span>stat original.txt    <span style="color:#75715e"># 查看详细信息，注意 Links: 1</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 创建硬链接</span>
+</span></span><span style="display:flex;"><span>ln original.txt hardlink.txt
+</span></span><span style="display:flex;"><span>ls -i original.txt hardlink.txt  <span style="color:#75715e"># 两个文件 inode 编号完全相同！</span>
+</span></span><span style="display:flex;"><span>stat original.txt                <span style="color:#75715e"># Links: 2</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 删除原文件</span>
+</span></span><span style="display:flex;"><span>rm original.txt
+</span></span><span style="display:flex;"><span>cat hardlink.txt     <span style="color:#75715e"># 数据仍然存在！</span>
+</span></span><span style="display:flex;"><span>stat hardlink.txt    <span style="color:#75715e"># Links: 1，inode 编号不变</span>
+</span></span></code></pre></div><p><strong>实验结论</strong>：</p>
+<ul>
+<li>删除 <code>original.txt</code> 只是移除了一条目录项（文件名到 inode 的映射）</li>
+<li>inode 的引用计数（Links）从 2 变为 1，数据块不会被释放</li>
+<li>只有引用计数归零，数据才会真正被删除</li>
+</ul>
+<h3 id="mmap零拷贝文件访问">mmap：零拷贝文件访问<a hidden class="anchor" aria-hidden="true" href="#mmap零拷贝文件访问">#</a></h3>
+<p><code>mmap</code> 把文件直接映射到进程虚拟地址空间，省去了从内核缓冲区拷贝到用户空间的步骤：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> fd <span style="color:#f92672">=</span> open(<span style="color:#e6db74">&#34;bigfile.dat&#34;</span>, O_RDONLY);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span><span style="color:#f92672">*</span> ptr <span style="color:#f92672">=</span> mmap(<span style="color:#66d9ef">nullptr</span>, <span style="color:#ae81ff">4096</span>, PROT_READ, MAP_PRIVATE, fd, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">char</span> first <span style="color:#f92672">=</span> ((<span style="color:#66d9ef">char</span><span style="color:#f92672">*</span>)ptr)[<span style="color:#ae81ff">0</span>];  <span style="color:#75715e">// 直接读，像访问数组一样
+</span></span></span><span style="display:flex;"><span>munmap(ptr, <span style="color:#ae81ff">4096</span>);
+</span></span><span style="display:flex;"><span>close(fd);
+</span></span></code></pre></div><hr>
+<h2 id="5-今日踩坑复盘">5. 今日踩坑复盘<a hidden class="anchor" aria-hidden="true" href="#5-今日踩坑复盘">#</a></h2>
+<p><strong>坑一：Windows + MinGW 的 ASan 支持残缺</strong></p>
+<p>编译参数加了，运行时没有任何输出，排查半天才发现是 MinGW 本身的已知缺陷。解决方案：安装 WSL，用 Linux 原生 g++ 编译。教训：遇到工具链问题，先查已知缺陷，别在配置上死磕。</p>
+<p><strong>坑二：<code>delete</code> 和 <code>delete[]</code> 混用</strong></p>
+<p><code>new char[20]</code> 之后写成了 <code>delete p</code> 而不是 <code>delete[] p</code>。这在大多数情况下不会立刻崩溃，但会悄悄损坏堆结构，之后的内存行为变得不可预测。ASan 会直接报这个错误。</p>
+<p><strong>坑三：生产者-消费者的退出条件不能耦合业务逻辑</strong></p>
+<p>最开始想在消费者收到负数任务时直接 <code>break</code> 退出，这会导致部分正常任务没有被处理，而且 <code>shutdown()</code> 之后其他消费者也无法正常退出。应该把&quot;业务跳过&quot;和&quot;线程退出&quot;完全分开。</p>
+<hr>
+<h2 id="-核心总结">💡 核心总结<a hidden class="anchor" aria-hidden="true" href="#-核心总结">#</a></h2>
+<p>今天三块内容的本质都是<strong>隔离与保护</strong>：</p>
+<ul>
+<li>虚拟内存通过页表把进程隔离开，防止互相踩踏</li>
+<li>mutex 和 atomic 把共享数据保护起来，防止竞态条件</li>
+<li>inode 机制把文件名和数据解耦，让数据的生命周期独立于文件名</li>
+</ul>
+<blockquote>
+<p><strong>记住</strong>：<code>condition_variable</code> 的 <code>wait()</code> 必须带 lambda 防止虚假唤醒；<code>notify_one</code> 和 <code>notify_all</code> 的选择直接影响性能；inode 引用计数归零才真正释放数据。</p>
+</blockquote>
+<p>明天（Day 5）继续深入网络编程，理解 Socket 本质——它只是一种特殊的文件描述符，今天对 fd 的理解打好了这个基础。</p>
+<hr>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+      <li><a href="http://localhost:1313/tags/c&#43;&#43;/">C&#43;&#43;</a></li>
+      <li><a href="http://localhost:1313/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/">操作系统</a></li>
+      <li><a href="http://localhost:1313/tags/%E5%86%85%E5%AD%98%E7%AE%A1%E7%90%86/">内存管理</a></li>
+      <li><a href="http://localhost:1313/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/">多线程</a></li>
+      <li><a href="http://localhost:1313/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/">文件系统</a></li>
+      <li><a href="http://localhost:1313/tags/asan/">ASan</a></li>
+      <li><a href="http://localhost:1313/tags/%E9%9D%A2%E8%AF%95%E7%AA%81%E5%87%BB/">面试突击</a></li>
+    </ul>
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">My Study Blog</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+</body>
+
+</html>

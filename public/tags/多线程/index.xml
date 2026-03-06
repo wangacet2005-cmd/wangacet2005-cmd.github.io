@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>多线程 on My Study Blog</title>
+    <link>http://localhost:1313/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/</link>
+    <description>Recent content in 多线程 on My Study Blog</description>
+    <generator>Hugo -- 0.156.0</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 01 Mar 2026 15:00:00 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Day 4：操作系统核心——内存管理、多线程与文件系统实战</title>
+      <link>http://localhost:1313/posts/os-memory-thread-filesystem/</link>
+      <pubDate>Sat, 28 Feb 2026 20:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/os-memory-thread-filesystem/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是我为期 30 天&amp;quot;PC 客户端开发工程师&amp;quot;冲刺计划的第四天。今天从 STL 进入操作系统底层，理解进程内存布局、多线程同步、文件系统 inode，并在 WSL 环境下完成了 ASan 内存检测工具的配置和实战。这些知识直接对应岗位要求中的&amp;quot;内存管理、进程线程调度&amp;quot;加分项。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-虚拟内存与进程内存布局&#34;&gt;1. 虚拟内存与进程内存布局&lt;/h2&gt;
+&lt;h3 id=&#34;虚拟地址-vs-物理地址&#34;&gt;虚拟地址 vs 物理地址&lt;/h3&gt;
+&lt;p&gt;C++ 程序里每一个指针存的都是&lt;strong&gt;虚拟地址&lt;/strong&gt;，不是真实的物理内存地址。操作系统为每个进程维护一张独立的&lt;strong&gt;页表（Page Table）&lt;/strong&gt;，负责把虚拟地址翻译成物理地址。&lt;/p&gt;
+&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;进程A的虚拟地址 0x7fff1234
+        ↓ 页表翻译
+物理内存地址 0x3a2b5678
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;这样设计的核心好处是&lt;strong&gt;进程隔离&lt;/strong&gt;：每个进程以为自己独占了整块内存，互相之间不会踩到对方的数据。&lt;/p&gt;
+&lt;p&gt;内存以&lt;strong&gt;页（Page）&lt;strong&gt;为单位管理，通常一页是 4KB。如果程序访问了一个虚拟地址，对应的物理页还没加载进内存，CPU 会触发&lt;/strong&gt;缺页中断（Page Fault）&lt;/strong&gt;，操作系统负责把数据从磁盘调入内存，再继续执行。这也是程序启动时&amp;quot;预热&amp;quot;阶段变慢的原因。&lt;/p&gt;
+&lt;h3 id=&#34;进程内存分段&#34;&gt;进程内存分段&lt;/h3&gt;
+&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;高地址  ┌──────────────┐
+        │   栈 Stack   │  ← 函数调用帧、局部变量，向下增长
+        ├──────────────┤
+        │      ↓       │
+        │    （空闲）   │
+        │      ↑       │
+        ├──────────────┤
+        │   堆 Heap    │  ← malloc/new 分配，向上增长
+        ├──────────────┤
+        │   BSS 段     │  ← 未初始化的全局/静态变量
+        ├──────────────┤
+        │   数据段      │  ← 已初始化的全局/静态变量
+        ├──────────────┤
+低地址  │   代码段      │  ← 可执行指令（只读）
+        └──────────────┘
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;面试高频考点：&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Day 5：网络编程基础——Socket 原理与 TCP 实战</title>
+      <link>http://localhost:1313/posts/network-socket-tcp/</link>
+      <pubDate>Sun, 01 Mar 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/network-socket-tcp/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是第 5 天，正式进入网络编程。昨天理解了文件描述符（fd）和 inode，今天发现 Socket 不过是 fd 的另一种形态——Linux 里&amp;quot;一切皆文件&amp;quot;的设计哲学在这里体现得淋漓尽致。今天完成了单客户端 echo server 和多线程版本，并用 &lt;code&gt;nc&lt;/code&gt; 工具验证了两个客户端同时通信。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-socket-的本质&#34;&gt;1. Socket 的本质&lt;/h2&gt;
+&lt;p&gt;Socket 就是一个&lt;strong&gt;文件描述符&lt;/strong&gt;。&lt;/p&gt;
+&lt;p&gt;昨天用 &lt;code&gt;open()&lt;/code&gt; 打开文件拿到一个 fd，用 &lt;code&gt;read()&lt;/code&gt; / &lt;code&gt;write()&lt;/code&gt; 读写，用 &lt;code&gt;close()&lt;/code&gt; 关闭。Socket 完全一样，只是&amp;quot;文件&amp;quot;的另一端不是磁盘，而是网络上的另一台机器：&lt;/p&gt;
+&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;普通文件：  open()   → fd → read()/write() → close()
+Socket：   socket() → fd → recv()/send()  → close()
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;操作系统内核负责把 &lt;code&gt;send()&lt;/code&gt; 的数据打包成 TCP 报文发出去，把收到的报文解包后放进缓冲区等 &lt;code&gt;recv()&lt;/code&gt;。上层代码只管读写 fd，不需要关心底层细节。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;2-tcp-vs-udp&#34;&gt;2. TCP vs UDP&lt;/h2&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;&lt;/th&gt;
+          &lt;th&gt;TCP&lt;/th&gt;
+          &lt;th&gt;UDP&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;连接&lt;/td&gt;
+          &lt;td&gt;需要三次握手&lt;/td&gt;
+          &lt;td&gt;无连接，直接发&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;可靠性&lt;/td&gt;
+          &lt;td&gt;保证送达、保证顺序&lt;/td&gt;
+          &lt;td&gt;不保证，可能丢包乱序&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;速度&lt;/td&gt;
+          &lt;td&gt;较慢（有确认机制）&lt;/td&gt;
+          &lt;td&gt;快&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;适用场景&lt;/td&gt;
+          &lt;td&gt;文件传输、HTTP、SSH&lt;/td&gt;
+          &lt;td&gt;视频直播、DNS、游戏&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;客户端传输文件用 &lt;strong&gt;TCP&lt;/strong&gt;——文件不能丢包，少一个字节文件就损坏了。直播用 &lt;strong&gt;UDP&lt;/strong&gt;——丢几帧用户感知不明显，但为等重传导致的卡顿体验更差。&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

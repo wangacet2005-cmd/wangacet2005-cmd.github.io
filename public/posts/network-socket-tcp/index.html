@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Day 5：网络编程基础——Socket 原理与 TCP 实战 | My Study Blog</title>
+<meta name="keywords" content="C&#43;&#43;, 网络编程, Socket, TCP, 多线程, 面试突击">
+<meta name="description" content="
+写在前面：这是第 5 天，正式进入网络编程。昨天理解了文件描述符（fd）和 inode，今天发现 Socket 不过是 fd 的另一种形态——Linux 里&quot;一切皆文件&quot;的设计哲学在这里体现得淋漓尽致。今天完成了单客户端 echo server 和多线程版本，并用 nc 工具验证了两个客户端同时通信。
+
+
+1. Socket 的本质
+Socket 就是一个文件描述符。
+昨天用 open() 打开文件拿到一个 fd，用 read() / write() 读写，用 close() 关闭。Socket 完全一样，只是&quot;文件&quot;的另一端不是磁盘，而是网络上的另一台机器：
+普通文件：  open()   → fd → read()/write() → close()
+Socket：   socket() → fd → recv()/send()  → close()
+操作系统内核负责把 send() 的数据打包成 TCP 报文发出去，把收到的报文解包后放进缓冲区等 recv()。上层代码只管读写 fd，不需要关心底层细节。
+
+2. TCP vs UDP
+
+  
+      
+          
+          TCP
+          UDP
+      
+  
+  
+      
+          连接
+          需要三次握手
+          无连接，直接发
+      
+      
+          可靠性
+          保证送达、保证顺序
+          不保证，可能丢包乱序
+      
+      
+          速度
+          较慢（有确认机制）
+          快
+      
+      
+          适用场景
+          文件传输、HTTP、SSH
+          视频直播、DNS、游戏
+      
+  
+
+客户端传输文件用 TCP——文件不能丢包，少一个字节文件就损坏了。直播用 UDP——丢几帧用户感知不明显，但为等重传导致的卡顿体验更差。">
+<meta name="author" content="wangacet2005-cmd">
+<link rel="canonical" href="http://localhost:1313/posts/network-socket-tcp/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.a29c24210eb31d9ce56f669c66a35c9c51b17376b7764e336a49af7dec914cf0.css" integrity="sha256-opwkIQ6zHZzlb2acZqNcnFGxc3a3dk4zakmvfeyRTPA=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/network-socket-tcp/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="My Study Blog (Alt + H)">My Study Blog</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    
+    <h1 class="post-title entry-hint-parent">
+      Day 5：网络编程基础——Socket 原理与 TCP 实战
+    </h1>
+    <div class="post-meta"><span title='2026-03-01 15:00:00 +0800 CST'>March 1, 2026</span>&nbsp;·&nbsp;<span>wangacet2005-cmd</span>
+
+</div>
+  </header> 
+  <div class="post-content"><blockquote>
+<p><strong>写在前面</strong>：这是第 5 天，正式进入网络编程。昨天理解了文件描述符（fd）和 inode，今天发现 Socket 不过是 fd 的另一种形态——Linux 里&quot;一切皆文件&quot;的设计哲学在这里体现得淋漓尽致。今天完成了单客户端 echo server 和多线程版本，并用 <code>nc</code> 工具验证了两个客户端同时通信。</p>
+</blockquote>
+<hr>
+<h2 id="1-socket-的本质">1. Socket 的本质<a hidden class="anchor" aria-hidden="true" href="#1-socket-的本质">#</a></h2>
+<p>Socket 就是一个<strong>文件描述符</strong>。</p>
+<p>昨天用 <code>open()</code> 打开文件拿到一个 fd，用 <code>read()</code> / <code>write()</code> 读写，用 <code>close()</code> 关闭。Socket 完全一样，只是&quot;文件&quot;的另一端不是磁盘，而是网络上的另一台机器：</p>
+<pre tabindex="0"><code>普通文件：  open()   → fd → read()/write() → close()
+Socket：   socket() → fd → recv()/send()  → close()
+</code></pre><p>操作系统内核负责把 <code>send()</code> 的数据打包成 TCP 报文发出去，把收到的报文解包后放进缓冲区等 <code>recv()</code>。上层代码只管读写 fd，不需要关心底层细节。</p>
+<hr>
+<h2 id="2-tcp-vs-udp">2. TCP vs UDP<a hidden class="anchor" aria-hidden="true" href="#2-tcp-vs-udp">#</a></h2>
+<table>
+  <thead>
+      <tr>
+          <th></th>
+          <th>TCP</th>
+          <th>UDP</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>连接</td>
+          <td>需要三次握手</td>
+          <td>无连接，直接发</td>
+      </tr>
+      <tr>
+          <td>可靠性</td>
+          <td>保证送达、保证顺序</td>
+          <td>不保证，可能丢包乱序</td>
+      </tr>
+      <tr>
+          <td>速度</td>
+          <td>较慢（有确认机制）</td>
+          <td>快</td>
+      </tr>
+      <tr>
+          <td>适用场景</td>
+          <td>文件传输、HTTP、SSH</td>
+          <td>视频直播、DNS、游戏</td>
+      </tr>
+  </tbody>
+</table>
+<p>客户端传输文件用 <strong>TCP</strong>——文件不能丢包，少一个字节文件就损坏了。直播用 <strong>UDP</strong>——丢几帧用户感知不明显，但为等重传导致的卡顿体验更差。</p>
+<hr>
+<h2 id="3-三次握手与四次挥手">3. 三次握手与四次挥手<a hidden class="anchor" aria-hidden="true" href="#3-三次握手与四次挥手">#</a></h2>
+<h3 id="三次握手建立连接">三次握手：建立连接<a hidden class="anchor" aria-hidden="true" href="#三次握手建立连接">#</a></h3>
+<pre tabindex="0"><code>客户端                        服务端
+  |  ──── SYN（我要连接你）──→  |
+  |  ←─── SYN+ACK（好的收到）── |
+  |  ──── ACK（我知道了）──────→ |
+  |          连接建立            |
+</code></pre><p><strong>为什么是三次而不是两次？</strong></p>
+<p>两次握手的问题是：服务端回了 SYN+ACK，但如果这个 ACK 在网络里丢了，客户端以为连接没建立，服务端却以为连接成功，双方状态不一致。第三次 ACK 的目的是让服务端确认&quot;客户端确实收到了我的响应&quot;。</p>
+<p><strong>如果第三次 ACK 丢了会怎样？</strong></p>
+<pre tabindex="0"><code>客户端状态：ESTABLISHED         服务端状态：SYN_RCVD
+（以为连接成功了）               （还在等 ACK，没收到）
+</code></pre><p>服务端超时后会重发 SYN+ACK，客户端收到后再次发 ACK，连接最终仍可建立。极端情况下服务端资源被大量半连接占满，这也是 <strong>SYN Flood 攻击</strong>的原理。</p>
+<h3 id="四次挥手断开连接">四次挥手：断开连接<a hidden class="anchor" aria-hidden="true" href="#四次挥手断开连接">#</a></h3>
+<pre tabindex="0"><code>主动方                         被动方
+  |  ──── FIN（我说完了）──────→ |
+  |  ←─── ACK（收到）─────────── |
+  |  ←─── FIN（我也说完了）────── |
+  |  ──── ACK（收到，再见）──────→|
+</code></pre><p>断开比建立多一次，是因为 TCP 是<strong>全双工</strong>的——两个方向的数据流独立关闭，一方说完了另一方可能还有数据要发，不能合并成一次。</p>
+<hr>
+<h2 id="4-tcp-server-的四步流程">4. TCP Server 的四步流程<a hidden class="anchor" aria-hidden="true" href="#4-tcp-server-的四步流程">#</a></h2>
+<pre tabindex="0"><code>socket() → bind() → listen() → accept()
+创建fd     绑定地址   开始监听    接受连接
+</code></pre><p>用电话类比：</p>
+<ul>
+<li><code>socket()</code>：买了一部电话</li>
+<li><code>bind()</code>：给电话装上固定号码</li>
+<li><code>listen()</code>：开机，等待来电</li>
+<li><code>accept()</code>：接听一通来电，拿到这通电话的专属 fd</li>
+</ul>
+<h3 id="server_fd-和-client_fd-的区别">server_fd 和 client_fd 的区别<a hidden class="anchor" aria-hidden="true" href="#server_fd-和-client_fd-的区别">#</a></h3>
+<p>这是今天最重要的概念之一。<strong>两个 fd 都存在于服务端程序里</strong>，客户端程序里一个都没有：</p>
+<pre tabindex="0"><code>服务端程序内部：
+┌─────────────────────────────────┐
+│  server_fd                      │  ← 专门负责等新连接
+│                                 │
+│  client_fd_1  ←→ 客户端A        │  ← accept() 返回的
+│  client_fd_2  ←→ 客户端B        │  ← accept() 返回的
+└─────────────────────────────────┘
+</code></pre><ul>
+<li><code>server_fd</code>：前台总机，只做 <code>accept()</code>，永远不直接收发数据</li>
+<li><code>client_fd</code>：转接后的专线，每个客户端连接对应一个，用来 <code>recv()</code> / <code>send()</code></li>
+</ul>
+<hr>
+<h2 id="5-代码实战">5. 代码实战<a hidden class="anchor" aria-hidden="true" href="#5-代码实战">#</a></h2>
+<h3 id="单客户端版本">单客户端版本<a hidden class="anchor" aria-hidden="true" href="#单客户端版本">#</a></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;iostream&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;string&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;cstring&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/socket.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;netinet/in.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;arpa/inet.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;unistd.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> server_fd <span style="color:#f92672">=</span> socket(AF_INET, SOCK_STREAM, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 避免端口复用问题（见踩坑部分）
+</span></span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> opt <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, <span style="color:#f92672">&amp;</span>opt, <span style="color:#66d9ef">sizeof</span>(opt));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    sockaddr_in addr{};
+</span></span><span style="display:flex;"><span>    addr.sin_family <span style="color:#f92672">=</span> AF_INET;
+</span></span><span style="display:flex;"><span>    addr.sin_port <span style="color:#f92672">=</span> htons(<span style="color:#ae81ff">8888</span>);        <span style="color:#75715e">// 注意字节序转换
+</span></span></span><span style="display:flex;"><span>    addr.sin_addr.s_addr <span style="color:#f92672">=</span> INADDR_ANY;
+</span></span><span style="display:flex;"><span>    bind(server_fd, (sockaddr<span style="color:#f92672">*</span>)<span style="color:#f92672">&amp;</span>addr, <span style="color:#66d9ef">sizeof</span>(addr));
+</span></span><span style="display:flex;"><span>    listen(server_fd, <span style="color:#ae81ff">10</span>);
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;服务端启动，监听 8888 端口...</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>        sockaddr_in client_addr{};
+</span></span><span style="display:flex;"><span>        socklen_t client_len <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(client_addr);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">int</span> client_fd <span style="color:#f92672">=</span> accept(server_fd, (sockaddr<span style="color:#f92672">*</span>)<span style="color:#f92672">&amp;</span>client_addr, <span style="color:#f92672">&amp;</span>client_len);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (client_fd <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;新客户端连接: &#34;</span> <span style="color:#f92672">&lt;&lt;</span> inet_ntoa(client_addr.sin_addr) <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">char</span> buf[<span style="color:#ae81ff">1024</span>];
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>            ssize_t n <span style="color:#f92672">=</span> recv(client_fd, buf, <span style="color:#66d9ef">sizeof</span>(buf) <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (n <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>            buf[n] <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;\0&#39;</span>;
+</span></span><span style="display:flex;"><span>            std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;收到: &#34;</span> <span style="color:#f92672">&lt;&lt;</span> buf;
+</span></span><span style="display:flex;"><span>            send(client_fd, buf, n, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        close(client_fd);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    close(server_fd);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="多线程版本每个连接一个线程">多线程版本（每个连接一个线程）<a hidden class="anchor" aria-hidden="true" href="#多线程版本每个连接一个线程">#</a></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;iostream&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;string&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;thread&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;cstring&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/socket.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;netinet/in.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;arpa/inet.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;unistd.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">handle_client</span>(<span style="color:#66d9ef">int</span> client_fd, std<span style="color:#f92672">::</span>string client_ip) {
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;[&#34;</span> <span style="color:#f92672">&lt;&lt;</span> client_ip <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;] 已连接</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> buf[<span style="color:#ae81ff">1024</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>        ssize_t n <span style="color:#f92672">=</span> recv(client_fd, buf, <span style="color:#66d9ef">sizeof</span>(buf) <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (n <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>        buf[n] <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;\0&#39;</span>;
+</span></span><span style="display:flex;"><span>        std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;[&#34;</span> <span style="color:#f92672">&lt;&lt;</span> client_ip <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;] 收到: &#34;</span> <span style="color:#f92672">&lt;&lt;</span> buf;
+</span></span><span style="display:flex;"><span>        send(client_fd, buf, n, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;[&#34;</span> <span style="color:#f92672">&lt;&lt;</span> client_ip <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;] 已断开</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>    close(client_fd);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> server_fd <span style="color:#f92672">=</span> socket(AF_INET, SOCK_STREAM, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> opt <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, <span style="color:#f92672">&amp;</span>opt, <span style="color:#66d9ef">sizeof</span>(opt));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    sockaddr_in addr{};
+</span></span><span style="display:flex;"><span>    addr.sin_family <span style="color:#f92672">=</span> AF_INET;
+</span></span><span style="display:flex;"><span>    addr.sin_port <span style="color:#f92672">=</span> htons(<span style="color:#ae81ff">8888</span>);
+</span></span><span style="display:flex;"><span>    addr.sin_addr.s_addr <span style="color:#f92672">=</span> INADDR_ANY;
+</span></span><span style="display:flex;"><span>    bind(server_fd, (sockaddr<span style="color:#f92672">*</span>)<span style="color:#f92672">&amp;</span>addr, <span style="color:#66d9ef">sizeof</span>(addr));
+</span></span><span style="display:flex;"><span>    listen(server_fd, <span style="color:#ae81ff">10</span>);
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;服务端启动，监听 8888 端口...</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>        sockaddr_in client_addr{};
+</span></span><span style="display:flex;"><span>        socklen_t client_len <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(client_addr);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">int</span> client_fd <span style="color:#f92672">=</span> accept(server_fd, (sockaddr<span style="color:#f92672">*</span>)<span style="color:#f92672">&amp;</span>client_addr, <span style="color:#f92672">&amp;</span>client_len);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (client_fd <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        std<span style="color:#f92672">::</span>string ip <span style="color:#f92672">=</span> inet_ntoa(client_addr.sin_addr);
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// server_fd 永远在主线程，client_fd 扔给子线程
+</span></span></span><span style="display:flex;"><span>        std<span style="color:#f92672">::</span><span style="color:#66d9ef">thread</span>(handle_client, client_fd, ip).detach();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    close(server_fd);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>编译命令：</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>g++ -g -pthread -o server server.cpp
+</span></span><span style="display:flex;"><span>./server
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 另开终端用 nc 测试</span>
+</span></span><span style="display:flex;"><span>nc 127.0.0.1 <span style="color:#ae81ff">8888</span>
+</span></span></code></pre></div><hr>
+<h2 id="6-字节序htons-是干什么的">6. 字节序：htons 是干什么的<a hidden class="anchor" aria-hidden="true" href="#6-字节序htons-是干什么的">#</a></h2>
+<p>网络协议统一用<strong>大端（Big Endian）</strong>，而 x86/ARM 通常用<strong>小端（Little Endian）</strong>。往 <code>sockaddr</code> 里写数据必须先转换：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>htons(<span style="color:#ae81ff">8888</span>)   <span style="color:#75715e">// 端口号：本机 → 网络字节序（16位）
+</span></span></span><span style="display:flex;"><span>ntohs(port)   <span style="color:#75715e">// 端口号：网络 → 本机字节序
+</span></span></span><span style="display:flex;"><span>htonl(ip)     <span style="color:#75715e">// IP地址：本机 → 网络字节序（32位）
+</span></span></span><span style="display:flex;"><span>ntohl(addr)   <span style="color:#75715e">// IP地址：网络 → 本机字节序
+</span></span></span></code></pre></div><p><strong>为什么 <code>INADDR_ANY</code> 不需要转换？</strong></p>
+<p><code>INADDR_ANY</code> 的值是 <code>0x00000000</code>，每个字节都是 0，大端小端翻转后结果相同，所以碰巧不需要转换。不是因为&quot;它已经定义好了&quot;，而是因为 <strong>0 的字节序翻转结果仍是 0</strong>。</p>
+<p>口诀：<strong>往 <code>sockaddr</code> 里写的数据必须转成网络字节序，读出来之后要转回本机字节序。</strong></p>
+<hr>
+<h2 id="7-今日踩坑复盘">7. 今日踩坑复盘<a hidden class="anchor" aria-hidden="true" href="#7-今日踩坑复盘">#</a></h2>
+<p><strong>坑一：编译产物名和运行名不一致</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>g++ -g -o note server.cpp  <span style="color:#75715e"># 产物叫 note</span>
+</span></span><span style="display:flex;"><span>./server                    <span style="color:#75715e"># ❌ 找不到</span>
+</span></span><span style="display:flex;"><span>./note                      <span style="color:#75715e"># ✅ 正确</span>
+</span></span></code></pre></div><p><strong>坑二：bind 失败——端口被占用</strong></p>
+<p>程序崩溃后端口不会立刻释放，重新运行时 <code>bind()</code> 报 &ldquo;Address already in use&rdquo;。解决方法是提前加一行：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> opt <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, <span style="color:#f92672">&amp;</span>opt, <span style="color:#66d9ef">sizeof</span>(opt));
+</span></span></code></pre></div><p><strong>坑三：recv() 不保证一次读完完整消息</strong></p>
+<p>TCP 是流协议，没有消息边界。客户端发 <code>&quot;hello\n&quot;</code>，<code>recv()</code> 可能分两次返回 <code>&quot;hel&quot;</code> 和 <code>&quot;lo\n&quot;</code>。正确做法是把收到的数据拼接起来，找到分隔符才算完整一条消息：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>std<span style="color:#f92672">::</span>string buffer;
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> chunk[<span style="color:#ae81ff">256</span>];
+</span></span><span style="display:flex;"><span>    ssize_t n <span style="color:#f92672">=</span> recv(client_fd, chunk, <span style="color:#66d9ef">sizeof</span>(chunk), <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (n <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>    buffer.append(chunk, n);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    size_t pos;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> ((pos <span style="color:#f92672">=</span> buffer.find(<span style="color:#e6db74">&#39;\n&#39;</span>)) <span style="color:#f92672">!=</span> std<span style="color:#f92672">::</span>string<span style="color:#f92672">::</span>npos) {
+</span></span><span style="display:flex;"><span>        std<span style="color:#f92672">::</span>string line <span style="color:#f92672">=</span> buffer.substr(<span style="color:#ae81ff">0</span>, pos);
+</span></span><span style="display:flex;"><span>        buffer.erase(<span style="color:#ae81ff">0</span>, pos <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>        process(line);  <span style="color:#75715e">// 处理完整的一行
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>坑四：服务端崩溃时客户端 send() 不会立刻报错</strong></p>
+<p>第一次 <code>send()</code> 数据进了内核缓冲区通常会成功，第二次才会收到 <code>SIGPIPE</code> 导致进程退出。解决方法：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;signal.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>signal(SIGPIPE, SIG_IGN);  <span style="color:#75715e">// 忽略 SIGPIPE，让 send() 返回 -1
+</span></span></span></code></pre></div><hr>
+<h2 id="-核心总结">💡 核心总结<a hidden class="anchor" aria-hidden="true" href="#-核心总结">#</a></h2>
+<pre tabindex="0"><code>Socket = 文件描述符 + 网络另一端
+server_fd = 只接新连接，永远不收发数据
+client_fd = 每个客户端一个，专门用来通信
+recv/send 不保证完整 → 需要自己处理粘包
+字节序转换 → 写入 sockaddr 时必做
+SO_REUSEADDR → 开发阶段必加
+</code></pre><blockquote>
+<p><strong>记住</strong>：<code>server_fd</code> 和 <code>client_fd</code> 都在服务端，前者是总机，后者是专线。<code>INADDR_ANY</code> 不需要转字节序不是因为它&quot;已经定义好了&quot;，而是因为它的值是 0，翻转字节序后结果不变。</p>
+</blockquote>
+<hr>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+      <li><a href="http://localhost:1313/tags/c&#43;&#43;/">C&#43;&#43;</a></li>
+      <li><a href="http://localhost:1313/tags/%E7%BD%91%E7%BB%9C%E7%BC%96%E7%A8%8B/">网络编程</a></li>
+      <li><a href="http://localhost:1313/tags/socket/">Socket</a></li>
+      <li><a href="http://localhost:1313/tags/tcp/">TCP</a></li>
+      <li><a href="http://localhost:1313/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/">多线程</a></li>
+      <li><a href="http://localhost:1313/tags/%E9%9D%A2%E8%AF%95%E7%AA%81%E5%87%BB/">面试突击</a></li>
+    </ul>
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">My Study Blog</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+</body>
+
+</html>

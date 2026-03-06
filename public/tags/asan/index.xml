@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>ASan on My Study Blog</title>
+    <link>http://localhost:1313/tags/asan/</link>
+    <description>Recent content in ASan on My Study Blog</description>
+    <generator>Hugo -- 0.156.0</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sat, 28 Feb 2026 20:00:00 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/asan/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Day 4：操作系统核心——内存管理、多线程与文件系统实战</title>
+      <link>http://localhost:1313/posts/os-memory-thread-filesystem/</link>
+      <pubDate>Sat, 28 Feb 2026 20:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/os-memory-thread-filesystem/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是我为期 30 天&amp;quot;PC 客户端开发工程师&amp;quot;冲刺计划的第四天。今天从 STL 进入操作系统底层，理解进程内存布局、多线程同步、文件系统 inode，并在 WSL 环境下完成了 ASan 内存检测工具的配置和实战。这些知识直接对应岗位要求中的&amp;quot;内存管理、进程线程调度&amp;quot;加分项。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-虚拟内存与进程内存布局&#34;&gt;1. 虚拟内存与进程内存布局&lt;/h2&gt;
+&lt;h3 id=&#34;虚拟地址-vs-物理地址&#34;&gt;虚拟地址 vs 物理地址&lt;/h3&gt;
+&lt;p&gt;C++ 程序里每一个指针存的都是&lt;strong&gt;虚拟地址&lt;/strong&gt;，不是真实的物理内存地址。操作系统为每个进程维护一张独立的&lt;strong&gt;页表（Page Table）&lt;/strong&gt;，负责把虚拟地址翻译成物理地址。&lt;/p&gt;
+&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;进程A的虚拟地址 0x7fff1234
+        ↓ 页表翻译
+物理内存地址 0x3a2b5678
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;这样设计的核心好处是&lt;strong&gt;进程隔离&lt;/strong&gt;：每个进程以为自己独占了整块内存，互相之间不会踩到对方的数据。&lt;/p&gt;
+&lt;p&gt;内存以&lt;strong&gt;页（Page）&lt;strong&gt;为单位管理，通常一页是 4KB。如果程序访问了一个虚拟地址，对应的物理页还没加载进内存，CPU 会触发&lt;/strong&gt;缺页中断（Page Fault）&lt;/strong&gt;，操作系统负责把数据从磁盘调入内存，再继续执行。这也是程序启动时&amp;quot;预热&amp;quot;阶段变慢的原因。&lt;/p&gt;
+&lt;h3 id=&#34;进程内存分段&#34;&gt;进程内存分段&lt;/h3&gt;
+&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;高地址  ┌──────────────┐
+        │   栈 Stack   │  ← 函数调用帧、局部变量，向下增长
+        ├──────────────┤
+        │      ↓       │
+        │    （空闲）   │
+        │      ↑       │
+        ├──────────────┤
+        │   堆 Heap    │  ← malloc/new 分配，向上增长
+        ├──────────────┤
+        │   BSS 段     │  ← 未初始化的全局/静态变量
+        ├──────────────┤
+        │   数据段      │  ← 已初始化的全局/静态变量
+        ├──────────────┤
+低地址  │   代码段      │  ← 可执行指令（只读）
+        └──────────────┘
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;面试高频考点：&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
   <channel>
-    <title>底层原理 on My New Hugo Project</title>
+    <title>底层原理 on My Study Blog</title>
     <link>http://localhost:1313/tags/%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/</link>
-    <description>Recent content in 底层原理 on My New Hugo Project</description>
+    <description>Recent content in 底层原理 on My Study Blog</description>
     <generator>Hugo -- 0.156.0</generator>
     <language>en-us</language>
     <lastBuildDate>Fri, 27 Feb 2026 15:00:00 +0800</lastBuildDate>
     <atom:link href="http://localhost:1313/tags/%E5%BA%95%E5%B1%82%E5%8E%9F%E7%90%86/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Day 3：C&#43;&#43; 面试必考——STL 容器底层原理与选型全攻略</title>
+      <title>Day 2：C&#43;&#43; 面试必考——STL 容器底层原理与选型全攻略</title>
       <link>http://localhost:1313/posts/stl-library/</link>
       <pubDate>Fri, 27 Feb 2026 15:00:00 +0800</pubDate>
       <guid>http://localhost:1313/posts/stl-library/</guid>
       <description>&lt;blockquote&gt;
-&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是我为期 30 天&amp;quot;PC 客户端开发工程师&amp;quot;冲刺计划的第三天。在打通了智能指针与 RAII 之后，今天进入 STL 的核心战场：&lt;strong&gt;容器（Container）&lt;/strong&gt;。容器是 C++ 日常开发中使用频率最高的工具，也是面试中&amp;quot;底层原理&amp;quot;考察的重灾区。今天的目标是：不仅会用，更要知道为什么这么用。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是我为期 30 天&amp;quot;PC 客户端开发工程师&amp;quot;冲刺计划的第二天。在打通了智能指针与 RAII 之后，今天进入 STL 的核心战场：&lt;strong&gt;容器（Container）&lt;/strong&gt;。容器是 C++ 日常开发中使用频率最高的工具，也是面试中&amp;quot;底层原理&amp;quot;考察的重灾区。今天的目标是：不仅会用，更要知道为什么这么用。&lt;/p&gt;
 &lt;/blockquote&gt;
 &lt;p&gt;STL 容器分为三大类：&lt;strong&gt;序列容器&lt;/strong&gt;（&lt;code&gt;vector&lt;/code&gt;、&lt;code&gt;list&lt;/code&gt;、&lt;code&gt;deque&lt;/code&gt;）、&lt;strong&gt;关联容器&lt;/strong&gt;（&lt;code&gt;map&lt;/code&gt;、&lt;code&gt;set&lt;/code&gt;）和&lt;strong&gt;无序容器&lt;/strong&gt;（&lt;code&gt;unordered_map&lt;/code&gt;、&lt;code&gt;unordered_set&lt;/code&gt;）。它们的核心差异在于底层数据结构，而底层数据结构直接决定了各种操作的时间复杂度和使用场景。&lt;/p&gt;
 &lt;hr&gt;

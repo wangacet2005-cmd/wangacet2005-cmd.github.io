@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
   <channel>
-    <title>STL on My New Hugo Project</title>
+    <title>STL on My Study Blog</title>
     <link>http://localhost:1313/tags/stl/</link>
-    <description>Recent content in STL on My New Hugo Project</description>
+    <description>Recent content in STL on My Study Blog</description>
     <generator>Hugo -- 0.156.0</generator>
     <language>en-us</language>
-    <lastBuildDate>Fri, 27 Feb 2026 15:00:00 +0800</lastBuildDate>
+    <lastBuildDate>Sat, 28 Feb 2026 15:00:00 +0800</lastBuildDate>
     <atom:link href="http://localhost:1313/tags/stl/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Day 3：C&#43;&#43; 面试必考——STL 容器底层原理与选型全攻略</title>
+      <title>Day 2：C&#43;&#43; 面试必考——STL 容器底层原理与选型全攻略</title>
       <link>http://localhost:1313/posts/stl-library/</link>
       <pubDate>Fri, 27 Feb 2026 15:00:00 +0800</pubDate>
       <guid>http://localhost:1313/posts/stl-library/</guid>
       <description>&lt;blockquote&gt;
-&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是我为期 30 天&amp;quot;PC 客户端开发工程师&amp;quot;冲刺计划的第三天。在打通了智能指针与 RAII 之后，今天进入 STL 的核心战场：&lt;strong&gt;容器（Container）&lt;/strong&gt;。容器是 C++ 日常开发中使用频率最高的工具，也是面试中&amp;quot;底层原理&amp;quot;考察的重灾区。今天的目标是：不仅会用，更要知道为什么这么用。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是我为期 30 天&amp;quot;PC 客户端开发工程师&amp;quot;冲刺计划的第二天。在打通了智能指针与 RAII 之后，今天进入 STL 的核心战场：&lt;strong&gt;容器（Container）&lt;/strong&gt;。容器是 C++ 日常开发中使用频率最高的工具，也是面试中&amp;quot;底层原理&amp;quot;考察的重灾区。今天的目标是：不仅会用，更要知道为什么这么用。&lt;/p&gt;
 &lt;/blockquote&gt;
 &lt;p&gt;STL 容器分为三大类：&lt;strong&gt;序列容器&lt;/strong&gt;（&lt;code&gt;vector&lt;/code&gt;、&lt;code&gt;list&lt;/code&gt;、&lt;code&gt;deque&lt;/code&gt;）、&lt;strong&gt;关联容器&lt;/strong&gt;（&lt;code&gt;map&lt;/code&gt;、&lt;code&gt;set&lt;/code&gt;）和&lt;strong&gt;无序容器&lt;/strong&gt;（&lt;code&gt;unordered_map&lt;/code&gt;、&lt;code&gt;unordered_set&lt;/code&gt;）。它们的核心差异在于底层数据结构，而底层数据结构直接决定了各种操作的时间复杂度和使用场景。&lt;/p&gt;
 &lt;hr&gt;
@@ -48,6 +48,75 @@
 &lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
 &lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;适用场景&#34;&gt;适用场景&lt;/h3&gt;
 &lt;p&gt;需要随机访问、末尾频繁增删的场景。&lt;strong&gt;在没有特殊需求时，&lt;code&gt;vector&lt;/code&gt; 永远是序列容器的首选。&lt;/strong&gt;&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Day 3：C&#43;&#43; 面试必考——STL 算法与迭代器全面解析</title>
+      <link>http://localhost:1313/posts/stl_algorithm-iterator/</link>
+      <pubDate>Sat, 28 Feb 2026 15:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/stl_algorithm-iterator/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是我为期 30 天&amp;quot;PC 客户端开发工程师&amp;quot;冲刺计划的第三天。掌握了 STL 容器之后，今天进入与容器配套的另一半：&lt;strong&gt;算法与迭代器&lt;/strong&gt;。STL 算法的设计哲学是&amp;quot;与容器解耦&amp;quot;——算法不关心数据装在什么容器里，只通过迭代器操作数据。理解这一点，才能真正用好 STL。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-迭代器算法与容器之间的桥梁&#34;&gt;1. 迭代器：算法与容器之间的桥梁&lt;/h2&gt;
+&lt;p&gt;迭代器是一个&lt;strong&gt;行为像指针的对象&lt;/strong&gt;。它屏蔽了容器的内部实现细节，让算法可以统一地操作任意容器中的数据。&lt;/p&gt;
+&lt;h3 id=&#34;五种迭代器类型&#34;&gt;五种迭代器类型&lt;/h3&gt;
+&lt;table&gt;
+  &lt;thead&gt;
+      &lt;tr&gt;
+          &lt;th&gt;类型&lt;/th&gt;
+          &lt;th&gt;支持操作&lt;/th&gt;
+          &lt;th&gt;代表容器&lt;/th&gt;
+      &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+      &lt;tr&gt;
+          &lt;td&gt;输入迭代器&lt;/td&gt;
+          &lt;td&gt;只读、单向&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;istream&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;输出迭代器&lt;/td&gt;
+          &lt;td&gt;只写、单向&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;ostream&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;前向迭代器&lt;/td&gt;
+          &lt;td&gt;读写、单向&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;unordered_map&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;双向迭代器&lt;/td&gt;
+          &lt;td&gt;读写、双向&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;list&lt;/code&gt;、&lt;code&gt;map&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+      &lt;tr&gt;
+          &lt;td&gt;随机访问迭代器&lt;/td&gt;
+          &lt;td&gt;读写、随机跳跃&lt;/td&gt;
+          &lt;td&gt;&lt;code&gt;vector&lt;/code&gt;、&lt;code&gt;deque&lt;/code&gt;&lt;/td&gt;
+      &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;能力越强的迭代器，兼容能力越强——需要双向迭代器的地方，传入随机访问迭代器完全没问题，反之则会编译报错。&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;vector&lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;&amp;gt;&lt;/span&gt; v &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; {&lt;span style=&#34;color:#ae81ff&#34;&gt;1&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;3&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;4&lt;/span&gt;, &lt;span style=&#34;color:#ae81ff&#34;&gt;5&lt;/span&gt;};
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; it  &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v.begin(); &lt;span style=&#34;color:#75715e&#34;&gt;// 指向第一个元素
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; end &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; v.end();   &lt;span style=&#34;color:#75715e&#34;&gt;// 指向最后一个元素的下一位（哨兵）
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cout &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;it;  &lt;span style=&#34;color:#75715e&#34;&gt;// 解引用：输出 1
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#f92672&#34;&gt;++&lt;/span&gt;it;         &lt;span style=&#34;color:#75715e&#34;&gt;// 移动到下一个
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;it &lt;span style=&#34;color:#f92672&#34;&gt;+=&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;2&lt;/span&gt;;      &lt;span style=&#34;color:#75715e&#34;&gt;// 随机访问迭代器专属：跳跃式移动
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;-面试高频坑点end-不能解引用&#34;&gt;⚠️ 面试高频坑点：&lt;code&gt;end()&lt;/code&gt; 不能解引用&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;end()&lt;/code&gt; 指向的是&lt;strong&gt;最后一个元素的下一位&lt;/strong&gt;，是一个&amp;quot;哨兵&amp;quot;位置，并不指向任何有效元素。对它解引用是未定义行为，轻则输出乱码，重则程序崩溃。&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ❌ 绝对不能这样做
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cout &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;v.end();
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// ✅ 正确：先判断，再解引用
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;auto&lt;/span&gt; it &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; find(v.begin(), v.end(), &lt;span style=&#34;color:#ae81ff&#34;&gt;99&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (it &lt;span style=&#34;color:#f92672&#34;&gt;!=&lt;/span&gt; v.end()) cout &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#f92672&#34;&gt;*&lt;/span&gt;it;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;hr&gt;
+&lt;h2 id=&#34;2-常用-stl-算法详解&#34;&gt;2. 常用 STL 算法详解&lt;/h2&gt;
+&lt;p&gt;所有算法都在 &lt;code&gt;&amp;lt;algorithm&amp;gt;&lt;/code&gt; 头文件中，&lt;code&gt;accumulate&lt;/code&gt; 在 &lt;code&gt;&amp;lt;numeric&amp;gt;&lt;/code&gt; 中。&lt;/p&gt;</description>
     </item>
   </channel>
 </rss>
