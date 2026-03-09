@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Day 6：高性能网络 I/O——从阻塞到 epoll | My Study Blog</title>
+<meta name="keywords" content="C&#43;&#43;, 网络编程, epoll, 非阻塞IO, 高并发, 面试突击">
+<meta name="description" content="
+写在前面：这是第 6 天。昨天的多线程 Server 每来一个连接就创建一个线程，1 万个连接就要 1 万个线程，内存和切换开销直接把程序拖垮。今天解决这个问题，理解 Linux 高性能网络 I/O 的核心机制：非阻塞 I/O 和 epoll。最终用单线程实现了同时处理多个客户端连接的 echo server。
+
+
+1. 昨天方案的根本缺陷
+先量化一下问题有多严重：
+一个线程默认栈大小：8MB
+1000 个连接 = 1000 个线程 = 8GB 内存
+仅仅是栈空间就已经不可接受了
+更深层的问题是：大多数时候这些线程都在阻塞等待，等客户端发数据过来。它们什么都不干，却占着内存和系统资源。
+// 昨天的代码：recv() 会一直卡在这里，直到有数据来
+ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
+//              ↑ 阻塞：线程挂起，等待内核通知
+这就是阻塞 I/O 的本质——线程把自己交给内核，内核说&quot;有数据了再叫你&quot;，线程在此期间什么也干不了。
+
+2. 非阻塞 I/O
+把 fd 设置为非阻塞模式之后，recv() 不再等待，立刻返回：
+#include &lt;fcntl.h&gt;
+
+void set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+// 非阻塞模式下的 recv
+ssize_t n = recv(client_fd, buf, sizeof(buf), 0);
+if (n &lt; 0) {
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        // 不是出错，只是暂时没有数据，待会儿再试
+    } else {
+        // 真正的错误
+    }
+}
+但随之而来的问题是：怎么知道哪个 fd 有数据？ 如果用循环轮询所有 fd，CPU 会被白白消耗在无效检查上，这叫忙等待（Busy Waiting），不可接受。">
+<meta name="author" content="wangacet2005-cmd">
+<link rel="canonical" href="http://localhost:1313/posts/epoll-nonblocking-io/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.a29c24210eb31d9ce56f669c66a35c9c51b17376b7764e336a49af7dec914cf0.css" integrity="sha256-opwkIQ6zHZzlb2acZqNcnFGxc3a3dk4zakmvfeyRTPA=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/posts/epoll-nonblocking-io/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="My Study Blog (Alt + H)">My Study Blog</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    
+    <h1 class="post-title entry-hint-parent">
+      Day 6：高性能网络 I/O——从阻塞到 epoll
+    </h1>
+    <div class="post-meta"><span title='2026-03-06 21:00:00 +0800 CST'>March 6, 2026</span>&nbsp;·&nbsp;<span>wangacet2005-cmd</span>
+
+</div>
+  </header> 
+  <div class="post-content"><blockquote>
+<p><strong>写在前面</strong>：这是第 6 天。昨天的多线程 Server 每来一个连接就创建一个线程，1 万个连接就要 1 万个线程，内存和切换开销直接把程序拖垮。今天解决这个问题，理解 Linux 高性能网络 I/O 的核心机制：非阻塞 I/O 和 epoll。最终用单线程实现了同时处理多个客户端连接的 echo server。</p>
+</blockquote>
+<hr>
+<h2 id="1-昨天方案的根本缺陷">1. 昨天方案的根本缺陷<a hidden class="anchor" aria-hidden="true" href="#1-昨天方案的根本缺陷">#</a></h2>
+<p>先量化一下问题有多严重：</p>
+<pre tabindex="0"><code>一个线程默认栈大小：8MB
+1000 个连接 = 1000 个线程 = 8GB 内存
+仅仅是栈空间就已经不可接受了
+</code></pre><p>更深层的问题是：大多数时候这些线程都在<strong>阻塞等待</strong>，等客户端发数据过来。它们什么都不干，却占着内存和系统资源。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// 昨天的代码：recv() 会一直卡在这里，直到有数据来
+</span></span></span><span style="display:flex;"><span>ssize_t n <span style="color:#f92672">=</span> recv(client_fd, buf, <span style="color:#66d9ef">sizeof</span>(buf), <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">//              ↑ 阻塞：线程挂起，等待内核通知
+</span></span></span></code></pre></div><p>这就是<strong>阻塞 I/O</strong> 的本质——线程把自己交给内核，内核说&quot;有数据了再叫你&quot;，线程在此期间什么也干不了。</p>
+<hr>
+<h2 id="2-非阻塞-io">2. 非阻塞 I/O<a hidden class="anchor" aria-hidden="true" href="#2-非阻塞-io">#</a></h2>
+<p>把 fd 设置为非阻塞模式之后，<code>recv()</code> 不再等待，立刻返回：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;fcntl.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">set_nonblocking</span>(<span style="color:#66d9ef">int</span> fd) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> flags <span style="color:#f92672">=</span> fcntl(fd, F_GETFL, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    fcntl(fd, F_SETFL, flags <span style="color:#f92672">|</span> O_NONBLOCK);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 非阻塞模式下的 recv
+</span></span></span><span style="display:flex;"><span>ssize_t n <span style="color:#f92672">=</span> recv(client_fd, buf, <span style="color:#66d9ef">sizeof</span>(buf), <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (n <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (errno <span style="color:#f92672">==</span> EAGAIN <span style="color:#f92672">||</span> errno <span style="color:#f92672">==</span> EWOULDBLOCK) {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 不是出错，只是暂时没有数据，待会儿再试
+</span></span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// 真正的错误
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>但随之而来的问题是：<strong>怎么知道哪个 fd 有数据？</strong> 如果用循环轮询所有 fd，CPU 会被白白消耗在无效检查上，这叫<strong>忙等待（Busy Waiting）</strong>，不可接受。</p>
+<p>真正需要的是：让内核盯着所有 fd，有事件发生时主动通知我。这就是 <strong>I/O 多路复用</strong>。</p>
+<hr>
+<h2 id="3-select-vs-epoll">3. select vs epoll<a hidden class="anchor" aria-hidden="true" href="#3-select-vs-epoll">#</a></h2>
+<h3 id="select了解即可">select（了解即可）<a hidden class="anchor" aria-hidden="true" href="#select了解即可">#</a></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>fd_set read_fds;
+</span></span><span style="display:flex;"><span>FD_ZERO(<span style="color:#f92672">&amp;</span>read_fds);
+</span></span><span style="display:flex;"><span>FD_SET(fd1, <span style="color:#f92672">&amp;</span>read_fds);
+</span></span><span style="display:flex;"><span>select(max_fd <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, <span style="color:#f92672">&amp;</span>read_fds, <span style="color:#66d9ef">nullptr</span>, <span style="color:#66d9ef">nullptr</span>, <span style="color:#66d9ef">nullptr</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 返回后要遍历所有 fd 才能知道谁就绪
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> fd <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; fd <span style="color:#f92672">&lt;=</span> max_fd; fd<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (FD_ISSET(fd, <span style="color:#f92672">&amp;</span>read_fds)) { <span style="color:#75715e">/* 处理 */</span> }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>缺陷：</strong></p>
+<ul>
+<li>fd 数量上限 1024</li>
+<li>每次调用都要把所有 fd 从用户空间拷贝到内核空间，O(n) 开销</li>
+<li>返回后仍需遍历全部 fd 找出谁就绪，连接越多越慢</li>
+</ul>
+<h3 id="epolllinux-现代方案">epoll（Linux 现代方案）<a hidden class="anchor" aria-hidden="true" href="#epolllinux-现代方案">#</a></h3>
+<p>epoll 和 select 最根本的区别不是 fd 上限，而是<strong>复杂度</strong>：</p>
+<pre tabindex="0"><code>select：每次调用都是 O(n)，重新拷贝和遍历所有 fd
+epoll：用持久的内核事件表，只返回就绪的 fd，是 O(1) 的
+       连接数越多，优势越明显
+</code></pre><p>三个核心函数：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// 1. 创建 epoll 实例
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> epfd <span style="color:#f92672">=</span> epoll_create1(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 2. 注册/修改/删除监听的 fd
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">epoll_event</span> ev;
+</span></span><span style="display:flex;"><span>ev.events <span style="color:#f92672">=</span> EPOLLIN;        <span style="color:#75715e">// 监听可读事件
+</span></span></span><span style="display:flex;"><span>ev.data.fd <span style="color:#f92672">=</span> client_fd;
+</span></span><span style="display:flex;"><span>epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, <span style="color:#f92672">&amp;</span>ev);   <span style="color:#75715e">// 添加
+</span></span></span><span style="display:flex;"><span>epoll_ctl(epfd, EPOLL_CTL_DEL, client_fd, <span style="color:#66d9ef">nullptr</span>); <span style="color:#75715e">// 删除
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 3. 等待事件，直接返回就绪的 fd 列表
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">epoll_event</span> events[<span style="color:#ae81ff">64</span>];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> n <span style="color:#f92672">=</span> epoll_wait(epfd, events, <span style="color:#ae81ff">64</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>);  <span style="color:#75715e">// -1 永久等待
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> n; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> fd <span style="color:#f92672">=</span> events[i].data.fd;
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 只处理真正就绪的 fd
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="4-两种触发模式">4. 两种触发模式<a hidden class="anchor" aria-hidden="true" href="#4-两种触发模式">#</a></h2>
+<h3 id="水平触发lt默认">水平触发（LT，默认）<a hidden class="anchor" aria-hidden="true" href="#水平触发lt默认">#</a></h3>
+<p>只要 fd 上还有数据没读完，每次 <code>epoll_wait</code> 都会通知。好写不容易漏数据，是大多数场景的推荐选择。</p>
+<h3 id="边缘触发et">边缘触发（ET）<a hidden class="anchor" aria-hidden="true" href="#边缘触发et">#</a></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>ev.events <span style="color:#f92672">=</span> EPOLLIN <span style="color:#f92672">|</span> EPOLLET;  <span style="color:#75715e">// 开启 ET 模式
+</span></span></span></code></pre></div><p>只在状态<strong>发生变化的那一刻</strong>通知一次，之后不再通知。性能更好，但<strong>必须一次性把数据全部读完</strong>，否则剩余数据永远躺在缓冲区里，再也不会触发通知。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// ET 模式下必须循环读到 EAGAIN
+</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>    ssize_t n <span style="color:#f92672">=</span> recv(fd, buf, <span style="color:#66d9ef">sizeof</span>(buf), <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (n <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (errno <span style="color:#f92672">==</span> EAGAIN <span style="color:#f92672">||</span> errno <span style="color:#f92672">==</span> EWOULDBLOCK) <span style="color:#66d9ef">break</span>;  <span style="color:#75715e">// 读完了
+</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>;  <span style="color:#75715e">// 真正的错误
+</span></span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (n <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">break</span>;  <span style="color:#75715e">// 对方断开
+</span></span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 处理数据...
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><hr>
+<h2 id="5-完整的-epoll-server">5. 完整的 epoll Server<a hidden class="anchor" aria-hidden="true" href="#5-完整的-epoll-server">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;iostream&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;cstring&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/socket.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;netinet/in.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;arpa/inet.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/epoll.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;fcntl.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;unistd.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">set_nonblocking</span>(<span style="color:#66d9ef">int</span> fd) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> flags <span style="color:#f92672">=</span> fcntl(fd, F_GETFL, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    fcntl(fd, F_SETFL, flags <span style="color:#f92672">|</span> O_NONBLOCK);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> server_fd <span style="color:#f92672">=</span> socket(AF_INET, SOCK_STREAM, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> opt <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, <span style="color:#f92672">&amp;</span>opt, <span style="color:#66d9ef">sizeof</span>(opt));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    sockaddr_in addr{};
+</span></span><span style="display:flex;"><span>    addr.sin_family <span style="color:#f92672">=</span> AF_INET;
+</span></span><span style="display:flex;"><span>    addr.sin_port <span style="color:#f92672">=</span> htons(<span style="color:#ae81ff">8888</span>);
+</span></span><span style="display:flex;"><span>    addr.sin_addr.s_addr <span style="color:#f92672">=</span> INADDR_ANY;
+</span></span><span style="display:flex;"><span>    bind(server_fd, (sockaddr<span style="color:#f92672">*</span>)<span style="color:#f92672">&amp;</span>addr, <span style="color:#66d9ef">sizeof</span>(addr));
+</span></span><span style="display:flex;"><span>    listen(server_fd, <span style="color:#ae81ff">10</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    set_nonblocking(server_fd);  <span style="color:#75715e">// server_fd 也要设为非阻塞（见踩坑部分）
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> epfd <span style="color:#f92672">=</span> epoll_create1(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>    epoll_event ev{};
+</span></span><span style="display:flex;"><span>    ev.events <span style="color:#f92672">=</span> EPOLLIN;
+</span></span><span style="display:flex;"><span>    ev.data.fd <span style="color:#f92672">=</span> server_fd;
+</span></span><span style="display:flex;"><span>    epoll_ctl(epfd, EPOLL_CTL_ADD, server_fd, <span style="color:#f92672">&amp;</span>ev);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;epoll server 启动，监听 8888...</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    epoll_event events[<span style="color:#ae81ff">64</span>];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">while</span> (true) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">int</span> n <span style="color:#f92672">=</span> epoll_wait(epfd, events, <span style="color:#ae81ff">64</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> n; i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">int</span> fd <span style="color:#f92672">=</span> events[i].data.fd;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (fd <span style="color:#f92672">==</span> server_fd) {
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// 有新连接进来
+</span></span></span><span style="display:flex;"><span>                sockaddr_in client_addr{};
+</span></span><span style="display:flex;"><span>                socklen_t len <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(client_addr);
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">int</span> client_fd <span style="color:#f92672">=</span> accept(server_fd, (sockaddr<span style="color:#f92672">*</span>)<span style="color:#f92672">&amp;</span>client_addr, <span style="color:#f92672">&amp;</span>len);
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> (client_fd <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">continue</span>;  <span style="color:#75715e">// 非阻塞：失败直接跳过
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                set_nonblocking(client_fd);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                epoll_event cev{};
+</span></span><span style="display:flex;"><span>                cev.events <span style="color:#f92672">=</span> EPOLLIN;
+</span></span><span style="display:flex;"><span>                cev.data.fd <span style="color:#f92672">=</span> client_fd;
+</span></span><span style="display:flex;"><span>                epoll_ctl(epfd, EPOLL_CTL_ADD, client_fd, <span style="color:#f92672">&amp;</span>cev);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;新连接: &#34;</span> <span style="color:#f92672">&lt;&lt;</span> inet_ntoa(client_addr.sin_addr) <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>            } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>                <span style="color:#75715e">// 普通客户端有数据可读
+</span></span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">char</span> buf[<span style="color:#ae81ff">1024</span>];
+</span></span><span style="display:flex;"><span>                ssize_t bytes <span style="color:#f92672">=</span> recv(fd, buf, <span style="color:#66d9ef">sizeof</span>(buf) <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> (bytes <span style="color:#f92672">&lt;=</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>                    epoll_ctl(epfd, EPOLL_CTL_DEL, fd, <span style="color:#66d9ef">nullptr</span>);
+</span></span><span style="display:flex;"><span>                    close(fd);
+</span></span><span style="display:flex;"><span>                    std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;客户端断开 fd=&#34;</span> <span style="color:#f92672">&lt;&lt;</span> fd <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>                } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>                    buf[bytes] <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;\0&#39;</span>;
+</span></span><span style="display:flex;"><span>                    std<span style="color:#f92672">::</span>cout <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;收到 fd=&#34;</span> <span style="color:#f92672">&lt;&lt;</span> fd <span style="color:#f92672">&lt;&lt;</span> <span style="color:#e6db74">&#34;: &#34;</span> <span style="color:#f92672">&lt;&lt;</span> buf;
+</span></span><span style="display:flex;"><span>                    send(fd, buf, bytes, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>                }
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    close(epfd);
+</span></span><span style="display:flex;"><span>    close(server_fd);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong>编译运行：</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>g++ -g -o epoll_server epoll_server.cpp
+</span></span><span style="display:flex;"><span>./epoll_server
+</span></span></code></pre></div><hr>
+<h2 id="6-与昨天多线程方案的本质区别">6. 与昨天多线程方案的本质区别<a hidden class="anchor" aria-hidden="true" href="#6-与昨天多线程方案的本质区别">#</a></h2>
+<pre tabindex="0"><code>昨天（多线程）：
+1 个连接 = 1 个线程
+10000 个连接 = 10000 个线程
+大部分线程在阻塞等待，浪费资源
+
+今天（epoll）：
+1 个线程管理所有连接
+只有真正有数据的 fd 才触发处理
+线程几乎不阻塞，CPU 利用率高
+</code></pre><p>这就是 <strong>Reactor 模式</strong>的核心思想——用事件驱动代替线程驱动。Nginx 就是用这个模型支撑百万并发连接的。</p>
+<hr>
+<h2 id="7-今日踩坑复盘">7. 今日踩坑复盘<a hidden class="anchor" aria-hidden="true" href="#7-今日踩坑复盘">#</a></h2>
+<p><strong>为什么 server_fd 也要设成非阻塞？</strong></p>
+<p>这是今天最容易忽略的细节。<code>server_fd</code> 设成非阻塞是为了防止一个竞态条件：</p>
+<pre tabindex="0"><code>1. epoll_wait 返回，告诉你 server_fd 可读（有新连接）
+2. 但在你调用 accept() 之前，客户端突然重置了连接
+3. 此时连接队列变空了
+
+如果 server_fd 是阻塞的：
+accept() 会一直卡住，等下一个连接，整个事件循环冻结
+其他 fd 上的事件全部积压，没人处理
+
+如果 server_fd 是非阻塞的：
+accept() 立刻返回 -1，errno = EAGAIN
+跳过这次，继续处理其他事件，事件循环正常运转
+</code></pre><p><strong>ET 模式只读了一半的后果</strong></p>
+<p>剩余数据永远躺在缓冲区里，不会再触发通知，也不会消失。直到对方再发新数据触发边缘变化，两段数据混在一起，逻辑彻底乱掉。ET 模式下收到通知必须循环读到 <code>EAGAIN</code>。</p>
+<hr>
+<h2 id="-核心总结">💡 核心总结<a hidden class="anchor" aria-hidden="true" href="#-核心总结">#</a></h2>
+<pre tabindex="0"><code>select  → O(n)，每次重新拷贝遍历所有 fd，上限 1024
+epoll   → O(1)，内核持久维护事件表，直接返回就绪列表
+LT 模式 → 有数据就通知，好写不易漏，推荐默认使用
+ET 模式 → 只通知一次，必须一次读完，性能更好但容易出 bug
+server_fd 非阻塞 → 防止 accept() 卡死事件循环
+</code></pre><blockquote>
+<p><strong>记住</strong>：epoll 和 select 最根本的区别是 O(1) vs O(n)，fd 上限只是表象。ET 模式下收到通知后必须循环读到 <code>EAGAIN</code>，否则剩余数据永远丢失。</p>
+</blockquote>
+<p>明天（Day 7）在 epoll 的基础上完成题目七的 TCP Echo Server，加上完整的错误处理、quit 命令支持和多客户端并发，把这三天的网络编程知识融合成一个完整的项目。</p>
+<hr>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+      <li><a href="http://localhost:1313/tags/c&#43;&#43;/">C&#43;&#43;</a></li>
+      <li><a href="http://localhost:1313/tags/%E7%BD%91%E7%BB%9C%E7%BC%96%E7%A8%8B/">网络编程</a></li>
+      <li><a href="http://localhost:1313/tags/epoll/">Epoll</a></li>
+      <li><a href="http://localhost:1313/tags/%E9%9D%9E%E9%98%BB%E5%A1%9Eio/">非阻塞IO</a></li>
+      <li><a href="http://localhost:1313/tags/%E9%AB%98%E5%B9%B6%E5%8F%91/">高并发</a></li>
+      <li><a href="http://localhost:1313/tags/%E9%9D%A2%E8%AF%95%E7%AA%81%E5%87%BB/">面试突击</a></li>
+    </ul>
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">My Study Blog</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+</body>
+
+</html>

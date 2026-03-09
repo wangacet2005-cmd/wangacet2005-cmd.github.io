@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>非阻塞IO on My Study Blog</title>
+    <link>http://localhost:1313/tags/%E9%9D%9E%E9%98%BB%E5%A1%9Eio/</link>
+    <description>Recent content in 非阻塞IO on My Study Blog</description>
+    <generator>Hugo -- 0.156.0</generator>
+    <language>en-us</language>
+    <lastBuildDate>Fri, 06 Mar 2026 21:00:00 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/%E9%9D%9E%E9%98%BB%E5%A1%9Eio/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Day 6：高性能网络 I/O——从阻塞到 epoll</title>
+      <link>http://localhost:1313/posts/epoll-nonblocking-io/</link>
+      <pubDate>Fri, 06 Mar 2026 21:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/epoll-nonblocking-io/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是第 6 天。昨天的多线程 Server 每来一个连接就创建一个线程，1 万个连接就要 1 万个线程，内存和切换开销直接把程序拖垮。今天解决这个问题，理解 Linux 高性能网络 I/O 的核心机制：非阻塞 I/O 和 epoll。最终用单线程实现了同时处理多个客户端连接的 echo server。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-昨天方案的根本缺陷&#34;&gt;1. 昨天方案的根本缺陷&lt;/h2&gt;
+&lt;p&gt;先量化一下问题有多严重：&lt;/p&gt;
+&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;一个线程默认栈大小：8MB
+1000 个连接 = 1000 个线程 = 8GB 内存
+仅仅是栈空间就已经不可接受了
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;更深层的问题是：大多数时候这些线程都在&lt;strong&gt;阻塞等待&lt;/strong&gt;，等客户端发数据过来。它们什么都不干，却占着内存和系统资源。&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 昨天的代码：recv() 会一直卡在这里，直到有数据来
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ssize_t n &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; recv(client_fd, buf, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(buf), &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;//              ↑ 阻塞：线程挂起，等待内核通知
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;这就是&lt;strong&gt;阻塞 I/O&lt;/strong&gt; 的本质——线程把自己交给内核，内核说&amp;quot;有数据了再叫你&amp;quot;，线程在此期间什么也干不了。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;2-非阻塞-io&#34;&gt;2. 非阻塞 I/O&lt;/h2&gt;
+&lt;p&gt;把 fd 设置为非阻塞模式之后，&lt;code&gt;recv()&lt;/code&gt; 不再等待，立刻返回：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;fcntl.h&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;set_nonblocking&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; fd) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; flags &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; fcntl(fd, F_GETFL, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    fcntl(fd, F_SETFL, flags &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; O_NONBLOCK);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 非阻塞模式下的 recv
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ssize_t n &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; recv(client_fd, buf, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(buf), &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (n &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (errno &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; EAGAIN &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; errno &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; EWOULDBLOCK) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 不是出错，只是暂时没有数据，待会儿再试
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 真正的错误
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;但随之而来的问题是：&lt;strong&gt;怎么知道哪个 fd 有数据？&lt;/strong&gt; 如果用循环轮询所有 fd，CPU 会被白白消耗在无效检查上，这叫&lt;strong&gt;忙等待（Busy Waiting）&lt;/strong&gt;，不可接受。&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>布局管理 on My Study Blog</title>
+    <link>http://localhost:1313/tags/%E5%B8%83%E5%B1%80%E7%AE%A1%E7%90%86/</link>
+    <description>Recent content in 布局管理 on My Study Blog</description>
+    <generator>Hugo -- 0.156.0</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 08 Mar 2026 21:00:00 +0800</lastBuildDate>
+    <atom:link href="http://localhost:1313/tags/%E5%B8%83%E5%B1%80%E7%AE%A1%E7%90%86/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Day 8：Qt 桌面开发入门——信号槽机制与布局管理</title>
+      <link>http://localhost:1313/posts/qt-signal-slot-layout/</link>
+      <pubDate>Sun, 08 Mar 2026 21:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/qt-signal-slot-layout/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：从今天开始进入 Qt 桌面开发。Day 5–7 的网络编程是底层能力，Qt 是把这些能力包装成用户能用的产品。今天的目标是搭通环境、理解信号槽机制、掌握三种布局管理器。信号槽是 Qt 的灵魂，后面所有的 UI 交互、多线程通信都建立在它之上。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-环境搭建的关键决策&#34;&gt;1. 环境搭建的关键决策&lt;/h2&gt;
+&lt;h3 id=&#34;cmake-而不是-qmake&#34;&gt;CMake 而不是 qmake&lt;/h3&gt;
+&lt;p&gt;选 CMake 构建有三个原因：现代 Qt 项目的主流趋势是 CMake，面试官会问构建系统的选型理由，而且 CMake 跨平台能力比 qmake 更强。最小可用的 CMakeLists.txt：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cmake&#34; data-lang=&#34;cmake&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cmake_minimum_required(&lt;span style=&#34;color:#e6db74&#34;&gt;VERSION&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;3.16&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;project(&lt;span style=&#34;color:#e6db74&#34;&gt;FileTransfer&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;LANGUAGES&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;CXX&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;set(&lt;span style=&#34;color:#e6db74&#34;&gt;CMAKE_CXX_STANDARD&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;17&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;set(&lt;span style=&#34;color:#e6db74&#34;&gt;CMAKE_AUTOMOC&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;ON&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;find_package(&lt;span style=&#34;color:#e6db74&#34;&gt;Qt6&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;REQUIRED&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;COMPONENTS&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;Widgets&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;add_executable(&lt;span style=&#34;color:#e6db74&#34;&gt;app&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;main.cpp&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;mywidget.cpp&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;mywidget.h&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;target_link_libraries(&lt;span style=&#34;color:#e6db74&#34;&gt;app&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;PRIVATE&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;Qt6::Widgets&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;automoc-是什么&#34;&gt;AUTOMOC 是什么&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;CMAKE_AUTOMOC ON&lt;/code&gt; 让 CMake 在编译前自动扫描带 &lt;code&gt;Q_OBJECT&lt;/code&gt; 宏的头文件，调用 MOC（Meta-Object Compiler）生成信号槽所需的额外 C++ 代码。没有这一步，所有 connect() 调用在运行时都会静默失败。&lt;/p&gt;
+&lt;h3 id=&#34;msvc-而不是-mingw&#34;&gt;MSVC 而不是 MinGW&lt;/h3&gt;
+&lt;p&gt;Windows 下选 MSVC 编译器，原因是工业界 PC 客户端开发几乎都用 MSVC，调试工具链（WinDbg、VS 诊断工具）更成熟，面试时说&amp;quot;我用 MSVC 编译&amp;quot;比&amp;quot;我用 MinGW&amp;quot;更有说服力。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;2-qt-对象树与内存管理&#34;&gt;2. Qt 对象树与内存管理&lt;/h2&gt;
+&lt;h3 id=&#34;父子关系自动析构&#34;&gt;父子关系自动析构&lt;/h3&gt;
+&lt;p&gt;Qt 的内存管理不完全靠智能指针，而是靠对象树。设了 parent 的子对象，parent 析构时会自动 delete 所有子对象。&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="noindex, nofollow">
+<title>CMake | My Study Blog</title>
+<meta name="keywords" content="">
+<meta name="description" content="">
+<meta name="author" content="wangacet2005-cmd">
+<link rel="canonical" href="http://localhost:1313/tags/cmake/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.a29c24210eb31d9ce56f669c66a35c9c51b17376b7764e336a49af7dec914cf0.css" integrity="sha256-opwkIQ6zHZzlb2acZqNcnFGxc3a3dk4zakmvfeyRTPA=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" type="application/rss+xml" href="http://localhost:1313/tags/cmake/index.xml" title="rss">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/tags/cmake/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script>
+</head>
+<body class="list" id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/" accesskey="h" title="My Study Blog (Alt + H)">My Study Blog</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+        </ul>
+    </nav>
+</header>
+<main class="main"> 
+<header class="page-header">
+  <h1>
+    CMake
+  </h1>
+</header>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">Day 8：Qt 桌面开发入门——信号槽机制与布局管理
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p> 写在前面：从今天开始进入 Qt 桌面开发。Day 5–7 的网络编程是底层能力，Qt 是把这些能力包装成用户能用的产品。今天的目标是搭通环境、理解信号槽机制、掌握三种布局管理器。信号槽是 Qt 的灵魂，后面所有的 UI 交互、多线程通信都建立在它之上。
+1. 环境搭建的关键决策 CMake 而不是 qmake 选 CMake 构建有三个原因：现代 Qt 项目的主流趋势是 CMake，面试官会问构建系统的选型理由，而且 CMake 跨平台能力比 qmake 更强。最小可用的 CMakeLists.txt：
+cmake_minimum_required(VERSION 3.16) project(FileTransfer LANGUAGES CXX) set(CMAKE_CXX_STANDARD 17) set(CMAKE_AUTOMOC ON) find_package(Qt6 REQUIRED COMPONENTS Widgets) add_executable(app main.cpp mywidget.cpp mywidget.h) target_link_libraries(app PRIVATE Qt6::Widgets) AUTOMOC 是什么 CMAKE_AUTOMOC ON 让 CMake 在编译前自动扫描带 Q_OBJECT 宏的头文件，调用 MOC（Meta-Object Compiler）生成信号槽所需的额外 C&#43;&#43; 代码。没有这一步，所有 connect() 调用在运行时都会静默失败。
+MSVC 而不是 MinGW Windows 下选 MSVC 编译器，原因是工业界 PC 客户端开发几乎都用 MSVC，调试工具链（WinDbg、VS 诊断工具）更成熟，面试时说&#34;我用 MSVC 编译&#34;比&#34;我用 MinGW&#34;更有说服力。
+2. Qt 对象树与内存管理 父子关系自动析构 Qt 的内存管理不完全靠智能指针，而是靠对象树。设了 parent 的子对象，parent 析构时会自动 delete 所有子对象。
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2026-03-08 21:00:00 +0800 CST'>March 8, 2026</span>&nbsp;·&nbsp;<span>wangacet2005-cmd</span></footer>
+  <a class="entry-link" aria-label="post link to Day 8：Qt 桌面开发入门——信号槽机制与布局管理" href="http://localhost:1313/posts/qt-signal-slot-layout/"></a>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="http://localhost:1313/">My Study Blog</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+</body>
+
+</html>

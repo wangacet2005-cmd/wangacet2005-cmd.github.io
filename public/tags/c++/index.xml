@@ -6,7 +6,7 @@
     <description>Recent content in C&#43;&#43; on My Study Blog</description>
     <generator>Hugo -- 0.156.0</generator>
     <language>en-us</language>
-    <lastBuildDate>Sun, 01 Mar 2026 15:00:00 +0800</lastBuildDate>
+    <lastBuildDate>Sun, 08 Mar 2026 21:00:00 +0800</lastBuildDate>
     <atom:link href="http://localhost:1313/tags/c++/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Day 1：C&#43;&#43; 面试必杀——彻底吃透智能指针与手写 shared_ptr</title>
@@ -229,6 +229,102 @@ Socket：   socket() → fd → recv()/send()  → close()
   &lt;/tbody&gt;
 &lt;/table&gt;
 &lt;p&gt;客户端传输文件用 &lt;strong&gt;TCP&lt;/strong&gt;——文件不能丢包，少一个字节文件就损坏了。直播用 &lt;strong&gt;UDP&lt;/strong&gt;——丢几帧用户感知不明显，但为等重传导致的卡顿体验更差。&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Day 6：高性能网络 I/O——从阻塞到 epoll</title>
+      <link>http://localhost:1313/posts/epoll-nonblocking-io/</link>
+      <pubDate>Fri, 06 Mar 2026 21:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/epoll-nonblocking-io/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是第 6 天。昨天的多线程 Server 每来一个连接就创建一个线程，1 万个连接就要 1 万个线程，内存和切换开销直接把程序拖垮。今天解决这个问题，理解 Linux 高性能网络 I/O 的核心机制：非阻塞 I/O 和 epoll。最终用单线程实现了同时处理多个客户端连接的 echo server。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-昨天方案的根本缺陷&#34;&gt;1. 昨天方案的根本缺陷&lt;/h2&gt;
+&lt;p&gt;先量化一下问题有多严重：&lt;/p&gt;
+&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;一个线程默认栈大小：8MB
+1000 个连接 = 1000 个线程 = 8GB 内存
+仅仅是栈空间就已经不可接受了
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;更深层的问题是：大多数时候这些线程都在&lt;strong&gt;阻塞等待&lt;/strong&gt;，等客户端发数据过来。它们什么都不干，却占着内存和系统资源。&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 昨天的代码：recv() 会一直卡在这里，直到有数据来
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ssize_t n &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; recv(client_fd, buf, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(buf), &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;//              ↑ 阻塞：线程挂起，等待内核通知
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;这就是&lt;strong&gt;阻塞 I/O&lt;/strong&gt; 的本质——线程把自己交给内核，内核说&amp;quot;有数据了再叫你&amp;quot;，线程在此期间什么也干不了。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;2-非阻塞-io&#34;&gt;2. 非阻塞 I/O&lt;/h2&gt;
+&lt;p&gt;把 fd 设置为非阻塞模式之后，&lt;code&gt;recv()&lt;/code&gt; 不再等待，立刻返回：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cpp&#34; data-lang=&#34;cpp&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;#include&lt;/span&gt; &lt;span style=&#34;color:#75715e&#34;&gt;&amp;lt;fcntl.h&amp;gt;&lt;/span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;set_nonblocking&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; fd) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;int&lt;/span&gt; flags &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; fcntl(fd, F_GETFL, &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    fcntl(fd, F_SETFL, flags &lt;span style=&#34;color:#f92672&#34;&gt;|&lt;/span&gt; O_NONBLOCK);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#75715e&#34;&gt;// 非阻塞模式下的 recv
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;ssize_t n &lt;span style=&#34;color:#f92672&#34;&gt;=&lt;/span&gt; recv(client_fd, buf, &lt;span style=&#34;color:#66d9ef&#34;&gt;sizeof&lt;/span&gt;(buf), &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;);
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (n &lt;span style=&#34;color:#f92672&#34;&gt;&amp;lt;&lt;/span&gt; &lt;span style=&#34;color:#ae81ff&#34;&gt;0&lt;/span&gt;) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    &lt;span style=&#34;color:#66d9ef&#34;&gt;if&lt;/span&gt; (errno &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; EAGAIN &lt;span style=&#34;color:#f92672&#34;&gt;||&lt;/span&gt; errno &lt;span style=&#34;color:#f92672&#34;&gt;==&lt;/span&gt; EWOULDBLOCK) {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 不是出错，只是暂时没有数据，待会儿再试
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    } &lt;span style=&#34;color:#66d9ef&#34;&gt;else&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;        &lt;span style=&#34;color:#75715e&#34;&gt;// 真正的错误
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;    }
+&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;但随之而来的问题是：&lt;strong&gt;怎么知道哪个 fd 有数据？&lt;/strong&gt; 如果用循环轮询所有 fd，CPU 会被白白消耗在无效检查上，这叫&lt;strong&gt;忙等待（Busy Waiting）&lt;/strong&gt;，不可接受。&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Day 7：TCP Echo Server 完整实战——从 Echo 到聊天室</title>
+      <link>http://localhost:1313/posts/echo-server-chatroom/</link>
+      <pubDate>Sat, 07 Mar 2026 21:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/echo-server-chatroom/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：这是第 7 天，网络编程三天的收尾。今天把 Day 5 的多线程、Day 6 的 epoll 融合成一个完整项目，补上粘包处理、quit 命令、SIGPIPE 保护，最后再把 Echo Server 升级成多人聊天室。代码从玩具级别走向接近生产级别。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-今天新增的两个核心问题&#34;&gt;1. 今天新增的两个核心问题&lt;/h2&gt;
+&lt;h3 id=&#34;粘包处理&#34;&gt;粘包处理&lt;/h3&gt;
+&lt;p&gt;TCP 是流协议，没有消息边界。客户端发两条消息，服务端可能一次 recv 全收到，也可能一条都没收完。解决方案是以 \n 作为消息分隔符，收到数据先放进缓冲区，找到 \n 才处理一条完整消息。&lt;/p&gt;
+&lt;h3 id=&#34;每个客户端需要独立缓冲区&#34;&gt;每个客户端需要独立缓冲区&lt;/h3&gt;
+&lt;p&gt;如果多个客户端共用一个 char buf[1024]，fd=5 的 &amp;ldquo;hel&amp;rdquo; 会被 fd=6 的数据覆盖，半包数据永久丢失。必须每个 fd 对应一个独立的 string，让数据能跨多次 epoll_wait 保留。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;2-三个关键设计决策&#34;&gt;2. 三个关键设计决策&lt;/h2&gt;
+&lt;h3 id=&#34;bufferserasefd-不能忘&#34;&gt;buffers.erase(fd) 不能忘&lt;/h3&gt;
+&lt;p&gt;忘了调用有两个后果：&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;内存泄漏&lt;/strong&gt;：每个断开的客户端留下残留数据，服务端长期运行内存持续增长。&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;fd 复用时数据污染&lt;/strong&gt;：操作系统会把断开的 fd 编号重新分配给新客户端。新客户端连上来，buffers[fd] 里还有上一个客户端的半包数据，两段数据拼在一起，处理出来的消息完全是乱的。这种 bug 复现概率低，极难排查。&lt;/p&gt;
+&lt;h3 id=&#34;客户端发半包后断开&#34;&gt;客户端发半包后断开&lt;/h3&gt;
+&lt;p&gt;客户端发 &amp;ldquo;hel&amp;rdquo; 后断开，服务端把 &amp;ldquo;hel&amp;rdquo; 存入缓冲区，找不到 \n 不处理。recv() 返回 0 触发 disconnect_client，buffers.erase(fd) 把 &amp;ldquo;hel&amp;rdquo; 随之清除，不会被错误处理。&lt;/p&gt;
+&lt;h3 id=&#34;为什么要处理-r&#34;&gt;为什么要处理 \r&lt;/h3&gt;
+&lt;p&gt;Windows 的 nc 发送的换行是 \r\n，不处理 \r 的话 &amp;ldquo;quit\r&amp;rdquo; != &amp;ldquo;quit&amp;rdquo;，quit 命令永远匹配不上。&lt;/p&gt;</description>
+    </item>
+    <item>
+      <title>Day 8：Qt 桌面开发入门——信号槽机制与布局管理</title>
+      <link>http://localhost:1313/posts/qt-signal-slot-layout/</link>
+      <pubDate>Sun, 08 Mar 2026 21:00:00 +0800</pubDate>
+      <guid>http://localhost:1313/posts/qt-signal-slot-layout/</guid>
+      <description>&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;写在前面&lt;/strong&gt;：从今天开始进入 Qt 桌面开发。Day 5–7 的网络编程是底层能力，Qt 是把这些能力包装成用户能用的产品。今天的目标是搭通环境、理解信号槽机制、掌握三种布局管理器。信号槽是 Qt 的灵魂，后面所有的 UI 交互、多线程通信都建立在它之上。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;1-环境搭建的关键决策&#34;&gt;1. 环境搭建的关键决策&lt;/h2&gt;
+&lt;h3 id=&#34;cmake-而不是-qmake&#34;&gt;CMake 而不是 qmake&lt;/h3&gt;
+&lt;p&gt;选 CMake 构建有三个原因：现代 Qt 项目的主流趋势是 CMake，面试官会问构建系统的选型理由，而且 CMake 跨平台能力比 qmake 更强。最小可用的 CMakeLists.txt：&lt;/p&gt;
+&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-cmake&#34; data-lang=&#34;cmake&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;cmake_minimum_required(&lt;span style=&#34;color:#e6db74&#34;&gt;VERSION&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;3.16&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;project(&lt;span style=&#34;color:#e6db74&#34;&gt;FileTransfer&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;LANGUAGES&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;CXX&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;set(&lt;span style=&#34;color:#e6db74&#34;&gt;CMAKE_CXX_STANDARD&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;17&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;set(&lt;span style=&#34;color:#e6db74&#34;&gt;CMAKE_AUTOMOC&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;ON&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;find_package(&lt;span style=&#34;color:#e6db74&#34;&gt;Qt6&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;REQUIRED&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;COMPONENTS&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;Widgets&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;add_executable(&lt;span style=&#34;color:#e6db74&#34;&gt;app&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;main.cpp&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;mywidget.cpp&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;mywidget.h&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;target_link_libraries(&lt;span style=&#34;color:#e6db74&#34;&gt;app&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;PRIVATE&lt;/span&gt; &lt;span style=&#34;color:#e6db74&#34;&gt;Qt6::Widgets&lt;/span&gt;)&lt;span style=&#34;color:#960050;background-color:#1e0010&#34;&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h3 id=&#34;automoc-是什么&#34;&gt;AUTOMOC 是什么&lt;/h3&gt;
+&lt;p&gt;&lt;code&gt;CMAKE_AUTOMOC ON&lt;/code&gt; 让 CMake 在编译前自动扫描带 &lt;code&gt;Q_OBJECT&lt;/code&gt; 宏的头文件，调用 MOC（Meta-Object Compiler）生成信号槽所需的额外 C++ 代码。没有这一步，所有 connect() 调用在运行时都会静默失败。&lt;/p&gt;
+&lt;h3 id=&#34;msvc-而不是-mingw&#34;&gt;MSVC 而不是 MinGW&lt;/h3&gt;
+&lt;p&gt;Windows 下选 MSVC 编译器，原因是工业界 PC 客户端开发几乎都用 MSVC，调试工具链（WinDbg、VS 诊断工具）更成熟，面试时说&amp;quot;我用 MSVC 编译&amp;quot;比&amp;quot;我用 MinGW&amp;quot;更有说服力。&lt;/p&gt;
+&lt;hr&gt;
+&lt;h2 id=&#34;2-qt-对象树与内存管理&#34;&gt;2. Qt 对象树与内存管理&lt;/h2&gt;
+&lt;h3 id=&#34;父子关系自动析构&#34;&gt;父子关系自动析构&lt;/h3&gt;
+&lt;p&gt;Qt 的内存管理不完全靠智能指针，而是靠对象树。设了 parent 的子对象，parent 析构时会自动 delete 所有子对象。&lt;/p&gt;</description>
     </item>
   </channel>
 </rss>
